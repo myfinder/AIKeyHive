@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/sync-costs",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/sync-anthropic-pool",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}
