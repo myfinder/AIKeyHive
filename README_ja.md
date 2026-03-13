@@ -1,15 +1,25 @@
 # AIKeyHive
 
-LLM API キーの統合管理プラットフォーム。OpenAI・Anthropic・Gemini のキー発行、コスト追跡、予算管理をひとつのダッシュボードで行えます。
+**チーム向け LLM API キー統合管理プラットフォーム**
 
-## 主な機能
+複数の LLM プロバイダー（OpenAI、Anthropic、Gemini）を使っている組織では、キーの発行・利用料金の確認・利用上限の管理がプロバイダーごとにバラバラになりがちです。AIKeyHive はこれらをひとつのセルフホスト型プラットフォームに集約し、管理者はキーの発行・コスト追跡・予算管理を一元的に行え、ユーザーはシンプルなダッシュボードから自分のキーを申請・管理できます。
 
-- **マルチプロバイダー対応** — OpenAI / Anthropic / Gemini のAPIキーを一元管理
-- **コスト可視化** — 各プロバイダーの利用料金を日次で自動集計し、チャート表示
-- **予算管理** — グローバル / ユーザー単位で月額上限を設定、超過時にキーを自動無効化
-- **Anthropic キープール** — 管理者が事前に用意したキーをユーザーに割り当てるプール方式
-- **SSO 認証** — OIDC 準拠の IdP（Google Workspace、Okta、Microsoft Entra ID 等）に対応
-- **ロールベースアクセス制御** — ユーザー / 管理者の 2 ロール
+## 解決する課題
+
+- **キー管理の分散** — 3 つの管理コンソールを行き来する代わりに、OpenAI・Anthropic・Gemini の API キーを 1 か所で発行・管理
+- **コストの不透明さ** — 全プロバイダーの利用料金を日次で自動集計し、ユーザー・モデル・プロバイダー別に可視化
+- **支出の制御** — グローバルまたはユーザー単位で月額予算を設定し、超過時にキーを自動で無効化
+- **Anthropic のキー発行制約** — Anthropic は API 経由でのユーザー単位のキー発行に対応していないため、管理者が事前にキーを用意し、ユーザーがプールから取得するモデルで対応
+- **認証の統一** — OIDC 準拠の IdP（Google Workspace、Okta、Microsoft Entra ID 等）による SSO。メールドメインによるアクセス制限も可能
+
+## 機能
+
+- **マルチプロバイダーのキーライフサイクル管理** — OpenAI・Anthropic・Gemini の API キーの作成・一覧・無効化
+- **コストダッシュボード** — プロバイダー API / BigQuery 経由で日次コストを同期し、チャート・プロバイダー/モデル別の内訳を表示
+- **予算管理** — 月額上限とアラート閾値を設定し、超過時にキーを自動無効化
+- **Anthropic キープール** — 管理者が事前に用意したキーをユーザーにオンデマンドで割り当て
+- **ロールベースアクセス制御** — ユーザーと管理者の 2 ロール、それぞれ専用のダッシュボードと API 権限
+- **SSO 認証** — OIDC ベースのシングルサインオン、メールドメインのアクセス制限に対応
 
 ## 技術スタック
 
@@ -36,22 +46,16 @@ npm install
 cp .env.example .env
 ```
 
-`.env` を編集して以下を設定してください：
+`.env` を編集してください。利用可能な変数の一覧は [.env.example](.env.example) を参照してください。最低限必要な変数は以下のとおりです：
 
-| 変数名 | 説明 | 必須 |
-|---|---|---|
-| `AUTH_SECRET` | NextAuth 用シークレット (`npx auth secret` で生成) | Yes |
-| `AUTH_OIDC_ISSUER` | OIDC プロバイダーの Issuer URL | Yes |
-| `AUTH_OIDC_CLIENT_ID` | OIDC クライアント ID | Yes |
-| `AUTH_OIDC_CLIENT_SECRET` | OIDC クライアントシークレット | Yes |
-| `DATABASE_URL` | DB 接続先 (デフォルト: `file:local.db`) | No |
-| `INITIAL_ADMIN_EMAIL` | 初回ログイン時に管理者になるメールアドレス | No |
-| `ALLOWED_EMAIL_DOMAIN` | ログインを許可するメールドメイン | No |
-| `OPENAI_ADMIN_KEY` / `OPENAI_ORG_ID` | OpenAI 管理 API | プロバイダー使用時 |
-| `ANTHROPIC_ADMIN_KEY` / `ANTHROPIC_ORG_ID` | Anthropic 管理 API | プロバイダー使用時 |
-| `GOOGLE_PROJECT_ID` | GCP プロジェクト ID | プロバイダー使用時 |
-| `BIGQUERY_BILLING_TABLE` | BigQuery 課金テーブル (Gemini コスト用) | Gemini コスト時 |
-| `CRON_SECRET` | Cron エンドポイント認証用シークレット | 本番環境 |
+| 変数名 | 説明 |
+|---|---|
+| `AUTH_SECRET` | NextAuth 用シークレット (`npx auth secret` で生成) |
+| `AUTH_OIDC_ISSUER` | OIDC プロバイダーの Issuer URL |
+| `AUTH_OIDC_CLIENT_ID` | OIDC クライアント ID |
+| `AUTH_OIDC_CLIENT_SECRET` | OIDC クライアントシークレット |
+
+プロバイダー固有の変数（`OPENAI_ADMIN_KEY`、`ANTHROPIC_ADMIN_KEY`、`GOOGLE_PROJECT_ID` など）は、利用するプロバイダーのもののみ設定すれば十分です。
 
 ### 3. データベースのセットアップ
 
@@ -79,10 +83,10 @@ docker run -p 3000:3000 --env-file .env aikeyhive
 | パス | 説明 | 権限 |
 |---|---|---|
 | `/` | ログイン画面 | 公開 |
-| `/dashboard` | ダッシュボード（コスト概要・キー一覧・キー作成） | ユーザー |
-| `/costs` | コスト分析（日次チャート・プロバイダー/モデル別内訳） | ユーザー |
-| `/admin` | ユーザー管理（ロール変更） | 管理者 |
-| `/admin/budgets` | 予算管理（作成・削除） | 管理者 |
+| `/dashboard` | コスト概要・キー一覧・キー作成 | ユーザー |
+| `/costs` | コスト推移チャート・プロバイダー/モデル別内訳 | ユーザー |
+| `/admin` | ユーザー管理 | 管理者 |
+| `/admin/budgets` | 予算管理 | 管理者 |
 | `/admin/pool` | Anthropic キープール管理 | 管理者 |
 
 ## API エンドポイント
@@ -117,15 +121,18 @@ docker run -p 3000:3000 --env-file .env aikeyhive
 
 ```
 ユーザーログイン (OIDC SSO)
-    ↓
+    │
+    ▼
 JWT セッション確立 (ロール情報含む)
-    ↓
+    │
+    ▼
 ダッシュボード
   ├── キー作成
   │   ├── OpenAI / Gemini → プロバイダー API で直接発行
   │   └── Anthropic → 管理者が用意したプールから割当
   └── コスト確認
-    ↓
+    │
+    ▼
 日次 Cron
   ├── プロバイダー API からコスト取得 → DB に保存
   └── 予算チェック → 超過時はキーを自動無効化
@@ -133,4 +140,4 @@ JWT セッション確立 (ロール情報含む)
 
 ## ライセンス
 
-このプロジェクトはプライベートです。
+[MIT](LICENSE)
