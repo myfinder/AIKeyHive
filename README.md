@@ -57,13 +57,46 @@ Edit `.env` — see [.env.example](.env.example) for all available options. The 
 
 Provider-specific variables (`OPENAI_ADMIN_KEY`, `ANTHROPIC_ADMIN_KEY`, `GOOGLE_PROJECT_ID`, etc.) are only needed for the providers you plan to use.
 
-### 3. Set up the database
+### 3. Configure your OIDC provider
+
+Register AIKeyHive as a client in your IdP (Google Workspace, Okta, Microsoft Entra ID, etc.) and set the following:
+
+| Setting | Value |
+|---|---|
+| **Redirect URI (Callback URL)** | `https://<your-domain>/api/auth/callback/oidc` |
+| **Sign-out redirect URI** (if required) | `https://<your-domain>` |
+| **Allowed scopes** | `openid`, `profile`, `email` |
+
+For local development, use `http://localhost:3000/api/auth/callback/oidc`.
+
+<details>
+<summary>Provider-specific examples</summary>
+
+**Google Workspace**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
+2. Create an OAuth 2.0 Client ID (Web application)
+3. Add `http://localhost:3000/api/auth/callback/oidc` to Authorized redirect URIs
+4. Set `AUTH_OIDC_ISSUER=https://accounts.google.com`
+
+**Okta**
+1. Create a new Web Application in your Okta admin dashboard
+2. Set Sign-in redirect URI to `https://<your-domain>/api/auth/callback/oidc`
+3. Set `AUTH_OIDC_ISSUER=https://<your-org>.okta.com`
+
+**Microsoft Entra ID**
+1. Register an application in Azure Portal → App registrations
+2. Add a Web platform redirect URI: `https://<your-domain>/api/auth/callback/oidc`
+3. Set `AUTH_OIDC_ISSUER=https://login.microsoftonline.com/<tenant-id>/v2.0`
+
+</details>
+
+### 4. Set up the database
 
 ```bash
 npx drizzle-kit push
 ```
 
-### 4. Start the dev server
+### 5. Start the dev server
 
 ```bash
 npm run dev

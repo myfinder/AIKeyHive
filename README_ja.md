@@ -57,13 +57,46 @@ cp .env.example .env
 
 プロバイダー固有の変数（`OPENAI_ADMIN_KEY`、`ANTHROPIC_ADMIN_KEY`、`GOOGLE_PROJECT_ID` など）は、利用するプロバイダーのもののみ設定すれば十分です。
 
-### 3. データベースのセットアップ
+### 3. OIDC プロバイダーの設定
+
+お使いの IdP（Google Workspace、Okta、Microsoft Entra ID 等）に AIKeyHive をクライアントとして登録し、以下を設定してください：
+
+| 設定項目 | 値 |
+|---|---|
+| **リダイレクト URI（コールバック URL）** | `https://<your-domain>/api/auth/callback/oidc` |
+| **サインアウト後のリダイレクト URI**（必要な場合） | `https://<your-domain>` |
+| **許可するスコープ** | `openid`, `profile`, `email` |
+
+ローカル開発時は `http://localhost:3000/api/auth/callback/oidc` を使用してください。
+
+<details>
+<summary>プロバイダー別の設定例</summary>
+
+**Google Workspace**
+1. [Google Cloud Console](https://console.cloud.google.com/) → API とサービス → 認証情報 を開く
+2. OAuth 2.0 クライアント ID を作成（ウェブアプリケーション）
+3. 承認済みのリダイレクト URI に `http://localhost:3000/api/auth/callback/oidc` を追加
+4. `AUTH_OIDC_ISSUER=https://accounts.google.com` を設定
+
+**Okta**
+1. Okta 管理画面で Web Application を作成
+2. Sign-in redirect URI に `https://<your-domain>/api/auth/callback/oidc` を設定
+3. `AUTH_OIDC_ISSUER=https://<your-org>.okta.com` を設定
+
+**Microsoft Entra ID**
+1. Azure Portal → アプリの登録 でアプリケーションを登録
+2. Web プラットフォームのリダイレクト URI に `https://<your-domain>/api/auth/callback/oidc` を追加
+3. `AUTH_OIDC_ISSUER=https://login.microsoftonline.com/<tenant-id>/v2.0` を設定
+
+</details>
+
+### 4. データベースのセットアップ
 
 ```bash
 npx drizzle-kit push
 ```
 
-### 4. 開発サーバーの起動
+### 5. 開発サーバーの起動
 
 ```bash
 npm run dev
