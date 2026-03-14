@@ -1,6 +1,9 @@
 import { db } from "@/db";
-import { budgets, costSnapshots, apiKeys } from "@/db/schema";
+import { budgets, costSnapshots, apiKeys, anthropicKeyPool, users } from "@/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
+import * as openai from "@/lib/providers/openai";
+import * as anthropicProvider from "@/lib/providers/anthropic";
+import * as gemini from "@/lib/providers/gemini";
 
 export interface BudgetCheck {
   budgetId: string;
@@ -67,7 +70,42 @@ export async function checkBudgets(): Promise<BudgetCheck[]> {
 }
 
 export async function deleteKeysForUser(userId: string): Promise<void> {
-  // TODO: also delete keys from providers before removing from DB
+  const userKeys = await db
+    .select()
+    .from(apiKeys)
+    .where(eq(apiKeys.userId, userId))
+    .all();
+
+  for (const key of userKeys) {
+    if (!key.providerKeyId) continue;
+    try {
+      if (key.provider === "openai") {
+        const user = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, key.userId))
+          .get();
+        if (user?.openaiProjectId) {
+          await openai.deleteServiceAccount(
+            user.openaiProjectId,
+            key.providerKeyId
+          );
+        }
+      } else if (key.provider === "anthropic") {
+        await anthropicProvider.archiveKey(key.providerKeyId);
+        await db
+          .update(anthropicKeyPool)
+          .set({ status: "disabled", assignedTo: null, assignedAt: null })
+          .where(eq(anthropicKeyPool.anthropicKeyId, key.providerKeyId));
+      } else if (key.provider === "gemini") {
+        const keyName = `projects/${process.env.GOOGLE_PROJECT_ID}/locations/global/keys/${key.providerKeyId}`;
+        await gemini.deleteKey(keyName);
+      }
+    } catch (error) {
+      console.error(`Provider key revocation failed for ${key.id}:`, error instanceof Error ? error.message : "Unknown error");
+    }
+  }
+
   await db.delete(apiKeys).where(eq(apiKeys.userId, userId));
 }
 

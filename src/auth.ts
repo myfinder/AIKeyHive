@@ -34,8 +34,10 @@ export const authConfig: NextAuthConfig = {
   callbacks: {
     async signIn({ profile }) {
       const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN;
-      if (allowedDomain && profile?.email) {
-        return profile.email.endsWith(`@${allowedDomain}`);
+      if (allowedDomain) {
+        if (!profile?.email) return false;
+        const emailDomain = profile.email.split("@").pop();
+        return emailDomain === allowedDomain;
       }
       return true;
     },
@@ -70,6 +72,19 @@ export const authConfig: NextAuthConfig = {
           token.id = newUser.id;
           token.role = newUser.role as "user" | "admin";
         }
+      } else if (token.id) {
+        // Refresh role from DB on every token renewal to reflect admin changes immediately
+        const user = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, token.id as string))
+          .get();
+        if (user) {
+          token.role = user.role as "user" | "admin";
+        } else {
+          // User deleted — invalidate token
+          return {};
+        }
       }
       return token;
     },
@@ -86,6 +101,7 @@ export const authConfig: NextAuthConfig = {
   },
   session: {
     strategy: "jwt",
+    maxAge: 8 * 60 * 60, // 8 hours
   },
 };
 

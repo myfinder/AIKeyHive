@@ -9,7 +9,7 @@ import * as gemini from "@/lib/providers/gemini";
 
 const createKeySchema = z.object({
   provider: z.enum(["openai", "anthropic", "gemini"]),
-  name: z.string().min(1).max(100),
+  name: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/, "Name may only contain letters, numbers, hyphens, and underscores"),
 });
 
 export async function GET() {
@@ -21,7 +21,6 @@ export async function GET() {
   const keys = await db
     .select({
       id: apiKeys.id,
-      userId: apiKeys.userId,
       provider: apiKeys.provider,
       name: apiKeys.name,
       keyHint: apiKeys.keyHint,
@@ -67,7 +66,7 @@ export async function POST(req: NextRequest) {
   const parsed = createKeySchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Invalid input", details: parsed.error.flatten() },
+      { error: "Invalid input" },
       { status: 400 }
     );
   }
@@ -109,6 +108,7 @@ export async function POST(req: NextRequest) {
       providerKeyId = sa.id;
       keyHint = `sk-...${fullKey.slice(-4)}`;
     } else if (provider === "anthropic") {
+      // Atomic update: claim first available key in a single UPDATE with WHERE status='available'
       const available = await db
         .select()
         .from(anthropicKeyPool)
@@ -123,19 +123,42 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const poolKey = available[0];
-      await db
+      const candidate = available[0];
+      // Use conditional update to prevent race condition
+      const updated = await db
         .update(anthropicKeyPool)
         .set({
           status: "assigned",
           assignedTo: session.user.id,
           assignedAt: new Date().toISOString(),
         })
-        .where(eq(anthropicKeyPool.id, poolKey.id));
+        .where(
+          and(
+            eq(anthropicKeyPool.id, candidate.id),
+            eq(anthropicKeyPool.status, "available")
+          )
+        )
+        .returning()
+        .all();
+
+      const poolKey = updated.length > 0 ? candidate : null;
+
+      if (!poolKey) {
+        return NextResponse.json(
+          { error: "Anthropic keys are currently unavailable. Please contact your administrator." },
+          { status: 409 }
+        );
+      }
 
       providerKeyId = poolKey.anthropicKeyId;
       fullKey = poolKey.keyValue;
       keyHint = poolKey.keyHint;
+
+      // Clear plaintext key value from pool after assignment
+      await db
+        .update(anthropicKeyPool)
+        .set({ keyValue: null })
+        .where(eq(anthropicKeyPool.id, candidate.id));
     } else if (provider === "gemini") {
       const result = await gemini.createKey(
         `aikeyhive-${session.user.email}-${name}`
@@ -157,12 +180,23 @@ export async function POST(req: NextRequest) {
       .returning()
       .get();
 
-    return NextResponse.json({
-      data: newKey,
+    const res = NextResponse.json({
+      data: {
+        id: newKey.id,
+        provider: newKey.provider,
+        name: newKey.name,
+        keyHint: newKey.keyHint,
+        createdAt: newKey.createdAt,
+      },
       ...(fullKey ? { key: fullKey } : {}),
     });
+    if (fullKey) {
+      res.headers.set("Cache-Control", "no-store, no-cache");
+      res.headers.set("Pragma", "no-cache");
+    }
+    return res;
   } catch (error) {
-    console.error("Key creation failed:", error);
+    console.error("Key creation failed:", error instanceof Error ? error.message : "Unknown error");
     return NextResponse.json(
       { error: "Failed to create key" },
       { status: 500 }

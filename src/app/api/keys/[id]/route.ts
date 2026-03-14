@@ -17,18 +17,13 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  const key = await db
-    .select()
-    .from(apiKeys)
-    .where(
-      and(
-        eq(apiKeys.id, id),
-        session.user.role === "admin"
-          ? undefined
-          : eq(apiKeys.userId, session.user.id)
-      )
-    )
-    .get();
+  const key = session.user.role === "admin"
+    ? await db.select().from(apiKeys).where(eq(apiKeys.id, id)).get()
+    : await db
+        .select()
+        .from(apiKeys)
+        .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, session.user.id)))
+        .get();
 
   if (!key) {
     return NextResponse.json({ error: "Key not found" }, { status: 404 });
@@ -64,7 +59,7 @@ export async function DELETE(
     const message = error instanceof Error ? error.message : String(error);
     console.error("Provider key deletion failed:", message);
     return NextResponse.json(
-      { error: "Failed to delete key from provider", detail: message },
+      { error: "Failed to delete key from provider" },
       { status: 502 }
     );
   }

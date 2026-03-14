@@ -12,6 +12,9 @@ export async function fetchCosts(
   if (!billingTable) {
     return [];
   }
+  if (!/^[a-zA-Z0-9._-]+$/.test(billingTable)) {
+    throw new Error("Invalid BIGQUERY_BILLING_TABLE format");
+  }
 
   const { BigQuery } = await import("@google-cloud/bigquery");
   const bigquery = new BigQuery();

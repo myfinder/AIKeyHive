@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { db } from "@/db";
 import { anthropicKeyPool } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { syncPoolFromAdmin } from "@/lib/providers/anthropic";
 
 export async function POST() {
+  const session = await auth();
+  if (session?.user?.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   try {
     const activeKeys = await syncPoolFromAdmin();
     let added = 0;

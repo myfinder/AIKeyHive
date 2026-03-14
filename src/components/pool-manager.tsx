@@ -17,9 +17,7 @@ import { toast } from "sonner";
 
 interface PoolKey {
   id: string;
-  anthropicKeyId: string;
   keyHint: string | null;
-  keyValue: string | null;
   status: string;
   assignedTo: string | null;
   assignedToEmail: string | null;

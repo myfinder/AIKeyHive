@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { db } from "@/db";
 import { budgets } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 export async function GET() {
+  const session = await auth();
+  if (session?.user?.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const all = await db.select().from(budgets).all();
   return NextResponse.json({ data: all });
 }
@@ -17,6 +23,11 @@ const budgetSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (session?.user?.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const body = await req.json();
   const parsed = budgetSchema.safeParse(body);
   if (!parsed.success) {
@@ -38,6 +49,11 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const session = await auth();
+  if (session?.user?.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   if (!id) {

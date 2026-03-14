@@ -2,8 +2,18 @@ import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
 
+function timingSafeCompare(a: string, b: string): boolean {
+  const maxLen = Math.max(a.length, b.length);
+  let mismatch = a.length !== b.length ? 1 : 0;
+  for (let i = 0; i < maxLen; i++) {
+    mismatch |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
+  return mismatch === 0;
+}
+
 export async function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+  // Normalize pathname to lowercase to prevent case-sensitivity bypass
+  const pathname = req.nextUrl.pathname.toLowerCase();
 
   // Public routes
   if (
@@ -15,10 +25,15 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Cron routes: check CRON_SECRET
+  // Cron routes: check CRON_SECRET with timing-safe comparison
   if (pathname.startsWith("/api/cron")) {
-    const authHeader = req.headers.get("authorization");
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) {
+      return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+    }
+    const authHeader = req.headers.get("authorization") || "";
+    const expected = `Bearer ${cronSecret}`;
+    if (!timingSafeCompare(authHeader, expected)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     return NextResponse.next();

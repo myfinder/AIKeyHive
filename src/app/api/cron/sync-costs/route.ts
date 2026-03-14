@@ -7,7 +7,13 @@ import * as anthropicCosts from "@/lib/costs/anthropic";
 import * as geminiCosts from "@/lib/costs/gemini";
 import { enforcebudgets } from "@/lib/budget";
 
-export async function GET() {
+export async function GET(req: Request) {
+  // Defense-in-depth: verify cron secret even if middleware already checked
+  const { verifyCronSecret } = await import("@/lib/crypto");
+  if (!verifyCronSecret(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const dateStr = yesterday.toISOString().split("T")[0];
@@ -48,7 +54,7 @@ export async function GET() {
       }
     } catch (error) {
       console.error("OpenAI cost sync failed:", error);
-      (results.errors as string[]).push(`openai: ${error}`);
+      (results.errors as string[]).push("openai: sync failed");
     }
   }
 
@@ -70,7 +76,7 @@ export async function GET() {
       }
     } catch (error) {
       console.error("Anthropic cost sync failed:", error);
-      (results.errors as string[]).push(`anthropic: ${error}`);
+      (results.errors as string[]).push("anthropic: sync failed");
     }
   }
 
@@ -90,7 +96,7 @@ export async function GET() {
       }
     } catch (error) {
       console.error("Gemini cost sync failed:", error);
-      (results.errors as string[]).push(`gemini: ${error}`);
+      (results.errors as string[]).push("gemini: sync failed");
     }
   }
 
@@ -100,7 +106,7 @@ export async function GET() {
     results.budgetExceeded = exceeded.length;
   } catch (error) {
     console.error("Budget check failed:", error);
-    (results.errors as string[]).push(`budget: ${error}`);
+    (results.errors as string[]).push("budget: check failed");
   }
 
   return NextResponse.json({ success: true, results });

@@ -4,7 +4,13 @@ import { anthropicKeyPool } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { syncPoolFromAdmin } from "@/lib/providers/anthropic";
 
-export async function GET() {
+export async function GET(req: Request) {
+  // Defense-in-depth: verify cron secret even if middleware already checked
+  const { verifyCronSecret } = await import("@/lib/crypto");
+  if (!verifyCronSecret(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     if (!process.env.ANTHROPIC_ADMIN_KEY) {
       return NextResponse.json({ skipped: true, reason: "No admin key" });

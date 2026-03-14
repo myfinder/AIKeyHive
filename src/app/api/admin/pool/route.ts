@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { db } from "@/db";
 import { anthropicKeyPool, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -6,6 +7,11 @@ import { z } from "zod";
 import { findKeyByHint } from "@/lib/providers/anthropic";
 
 export async function GET() {
+  const session = await auth();
+  if (session?.user?.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const pool = await db
     .select({
       id: anthropicKeyPool.id,
@@ -22,10 +28,15 @@ export async function GET() {
 }
 
 const addKeySchema = z.object({
-  keyValue: z.string().min(1, "API key is required"),
+  keyValue: z.string().min(1, "API key is required").startsWith("sk-ant-", "Key must start with sk-ant-"),
 });
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (session?.user?.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const body = await req.json();
   const parsed = addKeySchema.safeParse(body);
   if (!parsed.success) {

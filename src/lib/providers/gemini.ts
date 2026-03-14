@@ -46,9 +46,13 @@ export async function createKey(
   if (!res.ok) throw new Error(`GCP createKey failed: ${res.status}`);
   const operation = await res.json();
 
-  // Poll operation for completion
+  // Poll operation for completion (max 30 attempts)
   let result = operation;
+  let attempts = 0;
   while (!result.done) {
+    if (++attempts > 30) {
+      throw new Error("GCP createKey operation timed out");
+    }
     await new Promise((r) => setTimeout(r, 1000));
     const pollRes = await fetch(
       `https://apikeys.googleapis.com/v2/${result.name}`,

@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+local.db
+local.db-wal
+local.db-shm
+*.db
+credentials/
+node_modules/
+.git/
+.next/
+*.md
