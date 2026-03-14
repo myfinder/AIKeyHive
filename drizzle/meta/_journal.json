@@ -36,6 +36,13 @@
       "when": 1773461521657,
       "tag": "0004_eager_winter_soldier",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1773548400000,
+      "tag": "0005_add_key_hash",
+      "breakpoints": true
     }
   ]
 }

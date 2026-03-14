@@ -42,6 +42,7 @@ export const anthropicKeyPool = sqliteTable("anthropic_key_pool", {
   workspaceId: text("workspace_id"),
   anthropicKeyId: text("anthropic_key_id").unique().notNull(),
   keyHint: text("key_hint"),
+  keyHash: text("key_hash"),
   keyValue: text("key_value"),
   assignedTo: text("assigned_to").references(() => users.id),
   assignedAt: text("assigned_at"),

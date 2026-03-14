@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestDb, seedUser } from "@/__tests__/db-helper";
 import { anthropicKeyPool } from "@/db/schema";
+import { hashKey } from "@/lib/crypto";
 
 vi.mock("@/lib/providers/anthropic", () => ({
   findKeyByHint: vi.fn().mockResolvedValue({
@@ -48,6 +49,7 @@ describe("admin pool API", () => {
         id: "p1",
         anthropicKeyId: "secret-ant-id",
         keyHint: "sk-a...XyZw",
+        keyHash: hashKey("sk-ant-api03-full-secret-key"),
         keyValue: "sk-ant-api03-full-secret-key",
         status: "available",
       }).run();
@@ -111,6 +113,7 @@ describe("admin pool API", () => {
       testDbInstance.db.insert(anthropicKeyPool).values({
         id: "p1",
         anthropicKeyId: "ant-1",
+        keyHash: hashKey("sk-ant-api03-existing-key"),
         keyValue: "sk-ant-api03-existing-key",
         status: "available",
       }).run();

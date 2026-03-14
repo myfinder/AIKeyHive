@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import * as openai from "@/lib/providers/openai";
 import * as gemini from "@/lib/providers/gemini";
+import { decrypt } from "@/lib/crypto";
 
 const createKeySchema = z.object({
   provider: z.enum(["openai", "anthropic", "gemini"]),
@@ -151,7 +152,7 @@ export async function POST(req: NextRequest) {
       }
 
       providerKeyId = poolKey.anthropicKeyId;
-      fullKey = poolKey.keyValue;
+      fullKey = poolKey.keyValue ? decrypt(poolKey.keyValue) : null;
       keyHint = poolKey.keyHint;
 
       // Clear plaintext key value from pool after assignment

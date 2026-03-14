@@ -33,6 +33,7 @@ export function createTestDb() {
       workspace_id TEXT,
       anthropic_key_id TEXT UNIQUE NOT NULL,
       key_hint TEXT,
+      key_hash TEXT,
       key_value TEXT,
       assigned_to TEXT REFERENCES users(id),
       assigned_at TEXT,

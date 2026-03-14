@@ -5,6 +5,7 @@ import { anthropicKeyPool, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { findKeyByHint } from "@/lib/providers/anthropic";
+import { encrypt, hashKey } from "@/lib/crypto";
 
 export async function GET() {
   const session = await auth();
@@ -44,12 +45,13 @@ export async function POST(req: NextRequest) {
   }
 
   const keyValue = parsed.data.keyValue;
+  const keyDigest = hashKey(keyValue);
 
-  // Check for duplicates
+  // Check for duplicates using hash (no plaintext comparison)
   const existing = await db
-    .select()
+    .select({ id: anthropicKeyPool.id })
     .from(anthropicKeyPool)
-    .where(eq(anthropicKeyPool.keyValue, keyValue))
+    .where(eq(anthropicKeyPool.keyHash, keyDigest))
     .get();
 
   if (existing) {
@@ -77,7 +79,8 @@ export async function POST(req: NextRequest) {
     .values({
       anthropicKeyId: matched.id,
       keyHint: hint,
-      keyValue,
+      keyHash: keyDigest,
+      keyValue: encrypt(keyValue),
     });
 
   return NextResponse.json({ success: true, keyHint: hint });

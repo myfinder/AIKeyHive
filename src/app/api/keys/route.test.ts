@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestDb, seedUser } from "@/__tests__/db-helper";
 import { apiKeys, anthropicKeyPool } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { encrypt } from "@/lib/crypto";
 
 vi.mock("@/lib/providers/openai", () => ({
   createProject: vi.fn().mockResolvedValue({ id: "proj-123", name: "test" }),
@@ -176,7 +177,7 @@ describe("keys API", () => {
         id: "p1",
         anthropicKeyId: "ant-key-1",
         keyHint: "sk-a...XyZw",
-        keyValue: "sk-ant-api03-full-key-value",
+        keyValue: encrypt("sk-ant-api03-full-key-value"),
         status: "available",
       }).run();
 
