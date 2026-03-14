@@ -33,9 +33,7 @@ export default function RootLayout({
           <div className="flex min-h-screen flex-col">
             <div className="flex flex-1 flex-col">{children}</div>
             <footer className="border-t py-4 text-center text-sm text-muted-foreground">
-              <a href="https://github.com/myfinder/AIKeyHive" target="_blank" rel="noopener noreferrer" className="hover:underline">
-                AIKeyHive on GitHub
-              </a>
+              AIKeyHive
             </footer>
           </div>
           <Toaster />
