@@ -30,7 +30,10 @@ export async function createProject(name: string): Promise<OpenAIProject> {
     body: JSON.stringify({ name }),
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`OpenAI createProject failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`OpenAI createProject failed: ${res.status} ${body}`);
+  }
   return res.json();
 }
 
@@ -47,8 +50,10 @@ export async function createServiceAccountKey(
       cache: "no-store",
     }
   );
-  if (!res.ok)
-    throw new Error(`OpenAI createServiceAccount failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`OpenAI createServiceAccount failed: ${res.status} ${body}`);
+  }
   return res.json();
 }
 
