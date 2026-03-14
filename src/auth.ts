@@ -33,15 +33,10 @@ export const authConfig: NextAuthConfig = {
   ],
   callbacks: {
     async signIn({ profile }) {
-      console.log("[auth][signIn] profile:", JSON.stringify(profile));
       const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN?.trim();
       if (allowedDomain) {
-        if (!profile?.email) {
-          console.error("[auth][signIn] No email in profile, rejecting");
-          return false;
-        }
+        if (!profile?.email) return false;
         const emailDomain = profile.email.split("@").pop();
-        console.log("[auth][signIn] domain check:", emailDomain, "vs", allowedDomain);
         return emailDomain === allowedDomain;
       }
       return true;
@@ -161,13 +156,9 @@ export const authConfig: NextAuthConfig = {
       },
     },
   },
-  debug: true,
   logger: {
     error(error) {
       console.error("[auth][error]", error);
-    },
-    warn(code) {
-      console.warn("[auth][warn]", code);
     },
   },
 };
