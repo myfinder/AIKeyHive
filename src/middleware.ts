@@ -15,13 +15,13 @@ export async function middleware(req: NextRequest) {
   // Normalize pathname to lowercase to prevent case-sensitivity bypass
   const pathname = req.nextUrl.pathname.toLowerCase();
 
-  // Generate CSP nonce for every request
-  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  const isDev = process.env.NODE_ENV === "development";
+  // CSP: unsafe-inline is required because Next.js statically generated pages
+  // embed inline scripts that cannot receive a nonce at serve time.
+  // Nonce-based CSP would require converting all pages to dynamic rendering.
+  // Recharts and Sonner also require unsafe-inline for style-src.
   const csp = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
-    // style-src: unsafe-inline required by Recharts (inline setAttribute) and Sonner (inline style props)
+    "script-src 'self' 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
     "connect-src 'self'",
@@ -39,7 +39,6 @@ export async function middleware(req: NextRequest) {
     pathname === "/favicon.ico"
   ) {
     const res = NextResponse.next();
-    res.headers.set("x-nonce", nonce);
     res.headers.set("Content-Security-Policy", csp);
     return res;
   }
@@ -56,7 +55,6 @@ export async function middleware(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const cronRes = NextResponse.next();
-    cronRes.headers.set("x-nonce", nonce);
     cronRes.headers.set("Content-Security-Policy", csp);
     return cronRes;
   }
