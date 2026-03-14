@@ -15,6 +15,22 @@ export async function middleware(req: NextRequest) {
   // Normalize pathname to lowercase to prevent case-sensitivity bypass
   const pathname = req.nextUrl.pathname.toLowerCase();
 
+  // Generate CSP nonce for every request
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const isDev = process.env.NODE_ENV === "development";
+  const csp = [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
+    // style-src: unsafe-inline required by Recharts (inline setAttribute) and Sonner (inline style props)
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "font-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join("; ");
+
   // Public routes
   if (
     pathname === "/" ||
@@ -22,7 +38,10 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico"
   ) {
-    return NextResponse.next();
+    const res = NextResponse.next();
+    res.headers.set("x-nonce", nonce);
+    res.headers.set("Content-Security-Policy", csp);
+    return res;
   }
 
   // Cron routes: check CRON_SECRET with timing-safe comparison
@@ -36,7 +55,10 @@ export async function middleware(req: NextRequest) {
     if (!timingSafeCompare(authHeader, expected)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    return NextResponse.next();
+    const cronRes = NextResponse.next();
+    cronRes.headers.set("x-nonce", nonce);
+    cronRes.headers.set("Content-Security-Policy", csp);
+    return cronRes;
   }
 
   // Auth required - check JWT token directly
@@ -59,7 +81,10 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  const res = NextResponse.next();
+  res.headers.set("x-nonce", nonce);
+  res.headers.set("Content-Security-Policy", csp);
+  return res;
 }
 
 export const config = {
