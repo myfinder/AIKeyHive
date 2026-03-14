@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "db:push": "drizzle-kit push --dialect sqlite --schema ./src/db/schema.ts --url $TURSO_DATABASE_URL --auth-token $TURSO_AUTH_TOKEN",
+    "vercel-build": "npm run db:push && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
