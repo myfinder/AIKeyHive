@@ -80,7 +80,6 @@ export async function middleware(req: NextRequest) {
   }
 
   const res = NextResponse.next();
-  res.headers.set("x-nonce", nonce);
   res.headers.set("Content-Security-Policy", csp);
   return res;
 }
