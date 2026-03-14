@@ -107,6 +107,7 @@ export const authConfig: NextAuthConfig = {
     strategy: "jwt",
     maxAge: 1 * 60 * 60, // 1 hour
   },
+  trustHost: true,
   debug: process.env.NODE_ENV !== "production",
   logger: {
     error(error) {
