@@ -43,34 +43,38 @@ export const authConfig: NextAuthConfig = {
     },
     async jwt({ token, profile, trigger }) {
       if ((trigger === "signIn" || trigger === "signUp") && profile) {
-        const email = profile.email!;
-        const sub = profile.sub!;
-        const name = (profile.name as string) || null;
+        try {
+          const email = profile.email!;
+          const sub = profile.sub!;
+          const name = (profile.name as string) || null;
 
-        // Upsert user
-        const existing = await db
-          .select()
-          .from(users)
-          .where(eq(users.oidcSub, sub))
-          .get();
-
-        if (existing) {
-          token.id = existing.id;
-          token.role = existing.role as "user" | "admin";
-        } else {
-          const isInitialAdmin =
-            process.env.INITIAL_ADMIN_EMAIL &&
-            email === process.env.INITIAL_ADMIN_EMAIL;
-          const role = isInitialAdmin ? "admin" : "user";
-
-          const newUser = await db
-            .insert(users)
-            .values({ oidcSub: sub, email, name, role })
-            .returning()
+          // Upsert user
+          const existing = await db
+            .select()
+            .from(users)
+            .where(eq(users.oidcSub, sub))
             .get();
 
-          token.id = newUser.id;
-          token.role = newUser.role as "user" | "admin";
+          if (existing) {
+            token.id = existing.id;
+            token.role = existing.role as "user" | "admin";
+          } else {
+            const isInitialAdmin =
+              process.env.INITIAL_ADMIN_EMAIL?.trim() &&
+              email === process.env.INITIAL_ADMIN_EMAIL.trim();
+            const role = isInitialAdmin ? "admin" : "user";
+
+            const newUser = await db
+              .insert(users)
+              .values({ oidcSub: sub, email, name, role })
+              .returning()
+              .get();
+
+            token.id = newUser.id;
+            token.role = newUser.role as "user" | "admin";
+          }
+        } catch (error) {
+          console.error("[auth][jwt] DB error during sign-in:", error);
         }
       } else if (token.id) {
         // Refresh role from DB on every token renewal to reflect admin changes immediately
@@ -102,6 +106,15 @@ export const authConfig: NextAuthConfig = {
   session: {
     strategy: "jwt",
     maxAge: 1 * 60 * 60, // 1 hour
+  },
+  debug: process.env.NODE_ENV !== "production",
+  logger: {
+    error(error) {
+      console.error("[auth][error]", error);
+    },
+    warn(code) {
+      console.warn("[auth][warn]", code);
+    },
   },
 };
 
