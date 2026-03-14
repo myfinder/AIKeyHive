@@ -197,9 +197,10 @@ export async function POST(req: NextRequest) {
     }
     return res;
   } catch (error) {
-    console.error("Key creation failed:", error instanceof Error ? error.message : "Unknown error");
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("Key creation failed:", message, error instanceof Error ? error.stack : "");
     return NextResponse.json(
-      { error: "Failed to create key" },
+      { error: `Failed to create key: ${message}` },
       { status: 500 }
     );
   }
