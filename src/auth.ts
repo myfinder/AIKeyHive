@@ -26,9 +26,9 @@ declare module "next-auth" {
 export const authConfig: NextAuthConfig = {
   providers: [
     Okta({
-      clientId: process.env.AUTH_OIDC_CLIENT_ID,
-      clientSecret: process.env.AUTH_OIDC_CLIENT_SECRET,
-      issuer: process.env.AUTH_OIDC_ISSUER,
+      clientId: process.env.AUTH_OIDC_CLIENT_ID?.trim(),
+      clientSecret: process.env.AUTH_OIDC_CLIENT_SECRET?.trim(),
+      issuer: process.env.AUTH_OIDC_ISSUER?.trim(),
     }),
   ],
   callbacks: {
