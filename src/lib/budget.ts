@@ -66,14 +66,9 @@ export async function checkBudgets(): Promise<BudgetCheck[]> {
   return results;
 }
 
-export async function disableKeysForUser(userId: string): Promise<void> {
-  await db
-    .update(apiKeys)
-    .set({
-      status: "disabled",
-      disabledAt: new Date().toISOString(),
-    })
-    .where(and(eq(apiKeys.userId, userId), eq(apiKeys.status, "active")));
+export async function deleteKeysForUser(userId: string): Promise<void> {
+  // TODO: also delete keys from providers before removing from DB
+  await db.delete(apiKeys).where(eq(apiKeys.userId, userId));
 }
 
 export async function enforcebudgets(): Promise<BudgetCheck[]> {
@@ -82,7 +77,7 @@ export async function enforcebudgets(): Promise<BudgetCheck[]> {
 
   for (const check of exceeded) {
     if (check.scope === "user" && check.scopeId) {
-      await disableKeysForUser(check.scopeId);
+      await deleteKeysForUser(check.scopeId);
     }
   }
 

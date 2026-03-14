@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { apiKeys, anthropicKeyPool } from "@/db/schema";
+import { apiKeys, anthropicKeyPool, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import * as openai from "@/lib/providers/openai";
@@ -19,12 +19,42 @@ export async function GET() {
   }
 
   const keys = await db
-    .select()
+    .select({
+      id: apiKeys.id,
+      userId: apiKeys.userId,
+      provider: apiKeys.provider,
+      name: apiKeys.name,
+      keyHint: apiKeys.keyHint,
+      createdAt: apiKeys.createdAt,
+    })
     .from(apiKeys)
     .where(eq(apiKeys.userId, session.user.id))
     .all();
 
   return NextResponse.json({ data: keys });
+}
+
+async function getOrCreateOpenAIProject(
+  userId: string,
+  email: string
+): Promise<string> {
+  const user = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+
+  if (user?.openaiProjectId) {
+    return user.openaiProjectId;
+  }
+
+  const project = await openai.createProject(`aikeyhive-${email}`);
+  await db
+    .update(users)
+    .set({ openaiProjectId: project.id })
+    .where(eq(users.id, userId));
+
+  return project.id;
 }
 
 export async function POST(req: NextRequest) {
@@ -43,23 +73,42 @@ export async function POST(req: NextRequest) {
   }
 
   const { provider, name } = parsed.data;
+
+  // Check for duplicate: same user + provider + name
+  const existing = await db
+    .select()
+    .from(apiKeys)
+    .where(
+      and(
+        eq(apiKeys.userId, session.user.id),
+        eq(apiKeys.provider, provider),
+        eq(apiKeys.name, name)
+      )
+    )
+    .all();
+
+  if (existing.length > 0) {
+    return NextResponse.json(
+      { error: `An active ${provider} key with name "${name}" already exists` },
+      { status: 409 }
+    );
+  }
+
   let fullKey: string | null = null;
   let providerKeyId: string | null = null;
-  let providerProjectId: string | null = null;
   let keyHint: string | null = null;
 
   try {
     if (provider === "openai") {
-      const project = await openai.createProject(
-        `aikeyhive-${session.user.email}-${name}`
+      const projectId = await getOrCreateOpenAIProject(
+        session.user.id,
+        session.user.email!
       );
-      const sa = await openai.createServiceAccountKey(project.id, name);
+      const sa = await openai.createServiceAccountKey(projectId, name);
       fullKey = sa.api_key.value;
-      providerKeyId = sa.api_key.id;
-      providerProjectId = project.id;
+      providerKeyId = sa.id;
       keyHint = `sk-...${fullKey.slice(-4)}`;
     } else if (provider === "anthropic") {
-      // Assign from pool
       const available = await db
         .select()
         .from(anthropicKeyPool)
@@ -69,7 +118,7 @@ export async function POST(req: NextRequest) {
 
       if (available.length === 0) {
         return NextResponse.json(
-          { error: "No Anthropic keys available in pool" },
+          { error: "Anthropic keys are currently unavailable. Please contact your administrator." },
           { status: 409 }
         );
       }
@@ -85,6 +134,7 @@ export async function POST(req: NextRequest) {
         .where(eq(anthropicKeyPool.id, poolKey.id));
 
       providerKeyId = poolKey.anthropicKeyId;
+      fullKey = poolKey.keyValue;
       keyHint = poolKey.keyHint;
     } else if (provider === "gemini") {
       const result = await gemini.createKey(
@@ -100,8 +150,8 @@ export async function POST(req: NextRequest) {
       .values({
         userId: session.user.id,
         provider,
+        name,
         providerKeyId,
-        providerProjectId,
         keyHint,
       })
       .returning()

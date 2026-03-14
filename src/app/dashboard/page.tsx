@@ -4,6 +4,7 @@ import { Nav } from "@/components/nav";
 import { KeyTable } from "@/components/key-table";
 import { KeyCreateDialog } from "@/components/key-create-dialog";
 import { useCosts } from "@/hooks/use-keys";
+import { useSession } from "next-auth/react";
 import {
   Card,
   CardContent,
@@ -16,6 +17,8 @@ function MonthlySummary() {
   const now = new Date();
   const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
   const today = now.toISOString().split("T")[0];
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "admin";
 
   const { costs: byProvider } = useCosts({
     start: monthStart,
@@ -34,7 +37,9 @@ function MonthlySummary() {
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Card>
         <CardHeader className="pb-2">
-          <CardDescription>Monthly Total</CardDescription>
+          <CardDescription>
+            {isAdmin ? "Monthly Total (All Users)" : "Your Monthly Total"}
+          </CardDescription>
           <CardTitle className="text-2xl">${totalCost.toFixed(2)}</CardTitle>
         </CardHeader>
       </Card>
@@ -57,6 +62,12 @@ function MonthlySummary() {
   );
 }
 
+function MonthlySummaryGuard() {
+  const { data: session } = useSession();
+  if (session?.user?.role !== "admin") return null;
+  return <MonthlySummary />;
+}
+
 export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-background">
@@ -67,7 +78,7 @@ export default function DashboardPage() {
           <KeyCreateDialog />
         </div>
 
-        <MonthlySummary />
+        <MonthlySummaryGuard />
 
         <Card>
           <CardHeader>

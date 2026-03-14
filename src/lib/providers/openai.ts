@@ -28,6 +28,7 @@ export async function createProject(name: string): Promise<OpenAIProject> {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({ name }),
+    cache: "no-store",
   });
   if (!res.ok) throw new Error(`OpenAI createProject failed: ${res.status}`);
   return res.json();
@@ -43,6 +44,7 @@ export async function createServiceAccountKey(
       method: "POST",
       headers: headers(),
       body: JSON.stringify({ name }),
+      cache: "no-store",
     }
   );
   if (!res.ok)
@@ -55,21 +57,85 @@ export async function listProjectApiKeys(
 ): Promise<{ data: Array<{ id: string; name: string; redacted_value: string }> }> {
   const res = await fetch(
     `${OPENAI_API_BASE}/organization/projects/${projectId}/api_keys`,
-    { headers: headers() }
+    { headers: headers(), cache: "no-store" }
   );
   if (!res.ok)
     throw new Error(`OpenAI listProjectApiKeys failed: ${res.status}`);
   return res.json();
 }
 
-export async function deleteProjectApiKey(
+export async function deleteServiceAccount(
   projectId: string,
-  keyId: string
+  serviceAccountId: string
 ): Promise<void> {
-  const res = await fetch(
-    `${OPENAI_API_BASE}/organization/projects/${projectId}/api_keys/${keyId}`,
-    { method: "DELETE", headers: headers() }
-  );
-  if (!res.ok)
-    throw new Error(`OpenAI deleteProjectApiKey failed: ${res.status}`);
+  const url = `${OPENAI_API_BASE}/organization/projects/${projectId}/service_accounts/${serviceAccountId}`;
+  // Use https module directly to avoid Next.js fetch patching
+  const { default: https } = await import("https");
+  return new Promise((resolve, reject) => {
+    const reqUrl = new URL(url);
+    const req = https.request(
+      {
+        hostname: reqUrl.hostname,
+        path: reqUrl.pathname,
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_ADMIN_KEY}`,
+          "OpenAI-Organization": process.env.OPENAI_ORG_ID || "",
+        },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk: Buffer) => (data += chunk));
+        res.on("end", () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            resolve();
+          } else {
+            reject(
+              new Error(
+                `OpenAI deleteServiceAccount failed: ${res.statusCode} ${data}`
+              )
+            );
+          }
+        });
+      }
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+export async function archiveProject(projectId: string): Promise<void> {
+  const url = `${OPENAI_API_BASE}/organization/projects/${projectId}/archive`;
+  const { default: https } = await import("https");
+  return new Promise((resolve, reject) => {
+    const reqUrl = new URL(url);
+    const req = https.request(
+      {
+        hostname: reqUrl.hostname,
+        path: reqUrl.pathname,
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_ADMIN_KEY}`,
+          "OpenAI-Organization": process.env.OPENAI_ORG_ID || "",
+        },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk: Buffer) => (data += chunk));
+        res.on("end", () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            resolve();
+          } else {
+            reject(
+              new Error(
+                `OpenAI archiveProject failed: ${res.statusCode} ${data}`
+              )
+            );
+          }
+        });
+      }
+    );
+    req.on("error", reject);
+    req.end();
+  });
 }

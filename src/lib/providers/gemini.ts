@@ -34,7 +34,14 @@ export async function createKey(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ displayName }),
+    body: JSON.stringify({
+      displayName,
+      restrictions: {
+        apiTargets: [
+          { service: "generativelanguage.googleapis.com" },
+        ],
+      },
+    }),
   });
   if (!res.ok) throw new Error(`GCP createKey failed: ${res.status}`);
   const operation = await res.json();

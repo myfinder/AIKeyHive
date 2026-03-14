@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import type { NextAuthConfig } from "next-auth";
+import Okta from "next-auth/providers/okta";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -24,14 +25,11 @@ declare module "next-auth" {
 
 export const authConfig: NextAuthConfig = {
   providers: [
-    {
-      id: "oidc",
-      name: "SSO",
-      type: "oidc",
-      issuer: process.env.AUTH_OIDC_ISSUER,
+    Okta({
       clientId: process.env.AUTH_OIDC_CLIENT_ID,
       clientSecret: process.env.AUTH_OIDC_CLIENT_SECRET,
-    },
+      issuer: process.env.AUTH_OIDC_ISSUER,
+    }),
   ],
   callbacks: {
     async signIn({ profile }) {
@@ -58,7 +56,6 @@ export const authConfig: NextAuthConfig = {
           token.id = existing.id;
           token.role = existing.role as "user" | "admin";
         } else {
-          // Determine role: first admin or regular user
           const isInitialAdmin =
             process.env.INITIAL_ADMIN_EMAIL &&
             email === process.env.INITIAL_ADMIN_EMAIL;

@@ -22,14 +22,15 @@ const providerColors: Record<string, string> = {
 export function KeyTable() {
   const { keys, isLoading, mutate } = useKeys();
 
-  async function handleDisable(id: string) {
+  async function handleDelete(id: string) {
+    if (!confirm("This key will be permanently deleted. Continue?")) return;
     try {
       const res = await fetch(`/api/keys/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed");
-      toast.success("Key disabled");
+      toast.success("Key deleted");
       mutate();
     } catch {
-      toast.error("Failed to disable key");
+      toast.error("Failed to delete key");
     }
   }
 
@@ -54,8 +55,8 @@ export function KeyTable() {
       <TableHeader>
         <TableRow>
           <TableHead>Provider</TableHead>
+          <TableHead>Name</TableHead>
           <TableHead>Key Hint</TableHead>
-          <TableHead>Status</TableHead>
           <TableHead>Created</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
@@ -68,29 +69,21 @@ export function KeyTable() {
                 {key.provider}
               </Badge>
             </TableCell>
-            <TableCell className="font-mono text-sm">
+            <TableCell className="text-sm">{key.name || "—"}</TableCell>
+            <TableCell className="font-mono text-sm text-muted-foreground">
               {key.keyHint || "—"}
-            </TableCell>
-            <TableCell>
-              <Badge
-                variant={key.status === "active" ? "default" : "destructive"}
-              >
-                {key.status}
-              </Badge>
             </TableCell>
             <TableCell className="text-sm text-muted-foreground">
               {new Date(key.createdAt).toLocaleDateString()}
             </TableCell>
             <TableCell className="text-right">
-              {key.status === "active" && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => handleDisable(key.id)}
-                >
-                  Disable
-                </Button>
-              )}
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => handleDelete(key.id)}
+              >
+                Delete
+              </Button>
             </TableCell>
           </TableRow>
         ))}

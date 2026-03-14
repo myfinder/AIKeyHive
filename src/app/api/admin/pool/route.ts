@@ -1,17 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { anthropicKeyPool } from "@/db/schema";
+import { anthropicKeyPool, users } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { findKeyByHint } from "@/lib/providers/anthropic";
 
 export async function GET() {
-  const pool = await db.select().from(anthropicKeyPool).all();
+  const pool = await db
+    .select({
+      id: anthropicKeyPool.id,
+      keyHint: anthropicKeyPool.keyHint,
+      status: anthropicKeyPool.status,
+      assignedTo: anthropicKeyPool.assignedTo,
+      assignedToEmail: users.email,
+      assignedAt: anthropicKeyPool.assignedAt,
+    })
+    .from(anthropicKeyPool)
+    .leftJoin(users, eq(anthropicKeyPool.assignedTo, users.id))
+    .all();
   return NextResponse.json({ data: pool });
 }
 
 const addKeySchema = z.object({
-  anthropicKeyId: z.string().min(1),
-  keyHint: z.string().optional(),
-  workspaceId: z.string().optional(),
+  keyValue: z.string().min(1, "API key is required"),
 });
 
 export async function POST(req: NextRequest) {
@@ -21,15 +32,42 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
 
-  const newKey = await db
-    .insert(anthropicKeyPool)
-    .values({
-      anthropicKeyId: parsed.data.anthropicKeyId,
-      keyHint: parsed.data.keyHint || null,
-      workspaceId: parsed.data.workspaceId || null,
-    })
-    .returning()
+  const keyValue = parsed.data.keyValue;
+
+  // Check for duplicates
+  const existing = await db
+    .select()
+    .from(anthropicKeyPool)
+    .where(eq(anthropicKeyPool.keyValue, keyValue))
     .get();
 
-  return NextResponse.json({ data: newKey });
+  if (existing) {
+    return NextResponse.json({ error: "This key already exists in the pool" }, { status: 409 });
+  }
+
+  // Look up the Anthropic key ID via Admin API using the last 4 chars
+  const last4 = keyValue.slice(-4);
+  const matched = await findKeyByHint(
+    last4,
+    process.env.ANTHROPIC_WORKSPACE_ID
+  );
+
+  if (!matched) {
+    return NextResponse.json(
+      { error: "Could not find this key on Anthropic. Verify it belongs to the AIKeyHive workspace." },
+      { status: 404 }
+    );
+  }
+
+  const hint = matched.partial_key_hint;
+
+  await db
+    .insert(anthropicKeyPool)
+    .values({
+      anthropicKeyId: matched.id,
+      keyHint: hint,
+      keyValue,
+    });
+
+  return NextResponse.json({ success: true, keyHint: hint });
 }

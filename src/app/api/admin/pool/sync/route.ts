@@ -19,7 +19,7 @@ export async function POST() {
       if (!existing) {
         await db.insert(anthropicKeyPool).values({
           anthropicKeyId: key.id,
-          keyHint: key.hint,
+          keyHint: key.partial_key_hint,
           workspaceId: key.workspace_id,
           status: "available",
         });

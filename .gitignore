@@ -38,6 +38,9 @@ yarn-error.log*
 # database
 local.db
 
+# credentials
+/credentials/
+
 # vercel
 .vercel
 

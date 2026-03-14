@@ -11,6 +11,7 @@ export const users = sqliteTable("users", {
   role: text("role", { enum: ["user", "admin"] })
     .notNull()
     .default("user"),
+  openaiProjectId: text("openai_project_id"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),
@@ -26,16 +27,12 @@ export const apiKeys = sqliteTable("api_keys", {
   provider: text("provider", {
     enum: ["openai", "anthropic", "gemini"],
   }).notNull(),
+  name: text("name").notNull().default(""),
   providerKeyId: text("provider_key_id"),
-  providerProjectId: text("provider_project_id"),
   keyHint: text("key_hint"),
-  status: text("status", { enum: ["active", "disabled"] })
-    .notNull()
-    .default("active"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),
-  disabledAt: text("disabled_at"),
 });
 
 export const anthropicKeyPool = sqliteTable("anthropic_key_pool", {
@@ -45,6 +42,7 @@ export const anthropicKeyPool = sqliteTable("anthropic_key_pool", {
   workspaceId: text("workspace_id"),
   anthropicKeyId: text("anthropic_key_id").unique().notNull(),
   keyHint: text("key_hint"),
+  keyValue: text("key_value"),
   assignedTo: text("assigned_to").references(() => users.id),
   assignedAt: text("assigned_at"),
   status: text("status", {

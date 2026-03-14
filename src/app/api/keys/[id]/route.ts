@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { apiKeys, anthropicKeyPool } from "@/db/schema";
+import { apiKeys, anthropicKeyPool, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import * as openai from "@/lib/providers/openai";
 import * as anthropicProvider from "@/lib/providers/anthropic";
@@ -23,7 +23,6 @@ export async function DELETE(
     .where(
       and(
         eq(apiKeys.id, id),
-        // Admins can disable any key, users only their own
         session.user.role === "admin"
           ? undefined
           : eq(apiKeys.userId, session.user.id)
@@ -36,11 +35,23 @@ export async function DELETE(
   }
 
   try {
-    if (key.provider === "openai" && key.providerProjectId && key.providerKeyId) {
-      await openai.deleteProjectApiKey(key.providerProjectId, key.providerKeyId);
+    if (key.provider === "openai" && key.providerKeyId) {
+      // Get the user's OpenAI project ID
+      const user = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, key.userId))
+        .get();
+      if (user?.openaiProjectId) {
+        await openai.deleteServiceAccount(
+          user.openaiProjectId,
+          key.providerKeyId
+        );
+      }
     } else if (key.provider === "anthropic" && key.providerKeyId) {
-      await anthropicProvider.disableKey(key.providerKeyId);
-      // Return key to pool as disabled
+      // Set key to inactive on Anthropic
+      await anthropicProvider.archiveKey(key.providerKeyId);
+      // Update pool status
       await db
         .update(anthropicKeyPool)
         .set({ status: "disabled", assignedTo: null, assignedAt: null })
@@ -50,13 +61,15 @@ export async function DELETE(
       await gemini.deleteKey(keyName);
     }
   } catch (error) {
-    console.error("Provider key disable failed:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Provider key deletion failed:", message);
+    return NextResponse.json(
+      { error: "Failed to delete key from provider", detail: message },
+      { status: 502 }
+    );
   }
 
-  await db
-    .update(apiKeys)
-    .set({ status: "disabled", disabledAt: new Date().toISOString() })
-    .where(eq(apiKeys.id, id));
+  await db.delete(apiKeys).where(eq(apiKeys.id, id));
 
   return NextResponse.json({ success: true });
 }

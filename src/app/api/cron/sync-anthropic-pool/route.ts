@@ -23,7 +23,7 @@ export async function GET() {
       if (!existing) {
         await db.insert(anthropicKeyPool).values({
           anthropicKeyId: key.id,
-          keyHint: key.hint,
+          keyHint: key.partial_key_hint,
           workspaceId: key.workspace_id,
           status: "available",
         });

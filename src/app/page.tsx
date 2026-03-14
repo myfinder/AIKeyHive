@@ -43,7 +43,7 @@ export default function LoginPage() {
           <Button
             className="w-full"
             size="lg"
-            onClick={() => signIn("oidc", { callbackUrl: "/dashboard" })}
+            onClick={() => signIn("okta", { callbackUrl: "/dashboard" })}
           >
             Sign in with SSO
           </Button>

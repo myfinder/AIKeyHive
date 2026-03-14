@@ -1,0 +1,1 @@
+ALTER TABLE `anthropic_key_pool` ADD `key_value` text;

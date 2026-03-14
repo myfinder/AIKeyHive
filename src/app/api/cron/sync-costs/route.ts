@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { costSnapshots, apiKeys, users } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { costSnapshots, users } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import * as openaiCosts from "@/lib/costs/openai";
 import * as anthropicCosts from "@/lib/costs/anthropic";
 import * as geminiCosts from "@/lib/costs/gemini";
@@ -13,27 +13,27 @@ export async function GET() {
   const dateStr = yesterday.toISOString().split("T")[0];
   const today = new Date().toISOString().split("T")[0];
 
-  const results = { openai: 0, anthropic: 0, gemini: 0, budgetExceeded: 0 };
+  const results: Record<string, unknown> = {
+    openai: 0,
+    anthropic: 0,
+    gemini: 0,
+    budgetExceeded: 0,
+    errors: [] as string[],
+  };
 
-  try {
-    // OpenAI costs
-    if (process.env.OPENAI_ADMIN_KEY) {
+  // OpenAI costs
+  if (process.env.OPENAI_ADMIN_KEY) {
+    try {
       const entries = await openaiCosts.fetchCosts(dateStr, today);
       for (const entry of entries) {
-        // Map project to user
         let userId: string | null = null;
         if (entry.projectId) {
-          const key = await db
+          const user = await db
             .select()
-            .from(apiKeys)
-            .where(
-              and(
-                eq(apiKeys.provider, "openai"),
-                eq(apiKeys.providerProjectId, entry.projectId)
-              )
-            )
+            .from(users)
+            .where(eq(users.openaiProjectId, entry.projectId))
             .get();
-          userId = key?.userId || null;
+          userId = user?.id || null;
         }
 
         await db.insert(costSnapshots).values({
@@ -44,12 +44,17 @@ export async function GET() {
           costUsd: entry.costUsd,
           rawData: JSON.stringify(entry),
         });
-        results.openai++;
+        (results.openai as number)++;
       }
+    } catch (error) {
+      console.error("OpenAI cost sync failed:", error);
+      (results.errors as string[]).push(`openai: ${error}`);
     }
+  }
 
-    // Anthropic costs
-    if (process.env.ANTHROPIC_ADMIN_KEY) {
+  // Anthropic costs
+  if (process.env.ANTHROPIC_ADMIN_KEY) {
+    try {
       const entries = await anthropicCosts.fetchCosts(dateStr, today);
       for (const entry of entries) {
         await db.insert(costSnapshots).values({
@@ -61,12 +66,17 @@ export async function GET() {
           costUsd: entry.costUsd,
           rawData: JSON.stringify(entry),
         });
-        results.anthropic++;
+        (results.anthropic as number)++;
       }
+    } catch (error) {
+      console.error("Anthropic cost sync failed:", error);
+      (results.errors as string[]).push(`anthropic: ${error}`);
     }
+  }
 
-    // Gemini costs
-    if (process.env.BIGQUERY_BILLING_TABLE) {
+  // Gemini costs
+  if (process.env.BIGQUERY_BILLING_TABLE) {
+    try {
       const entries = await geminiCosts.fetchCosts(dateStr, today);
       for (const entry of entries) {
         await db.insert(costSnapshots).values({
@@ -76,20 +86,22 @@ export async function GET() {
           costUsd: entry.costUsd,
           rawData: JSON.stringify(entry),
         });
-        results.gemini++;
+        (results.gemini as number)++;
       }
+    } catch (error) {
+      console.error("Gemini cost sync failed:", error);
+      (results.errors as string[]).push(`gemini: ${error}`);
     }
+  }
 
-    // Check budgets
+  // Check budgets
+  try {
     const exceeded = await enforcebudgets();
     results.budgetExceeded = exceeded.length;
-
-    return NextResponse.json({ success: true, results });
   } catch (error) {
-    console.error("Cost sync failed:", error);
-    return NextResponse.json(
-      { error: "Cost sync failed" },
-      { status: 500 }
-    );
+    console.error("Budget check failed:", error);
+    (results.errors as string[]).push(`budget: ${error}`);
   }
+
+  return NextResponse.json({ success: true, results });
 }
