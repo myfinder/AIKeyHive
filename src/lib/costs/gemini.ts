@@ -17,7 +17,11 @@ export async function fetchCosts(
   }
 
   const { BigQuery } = await import("@google-cloud/bigquery");
-  const bigquery = new BigQuery();
+
+  const credentialsJson = process.env.GOOGLE_CREDENTIALS_JSON;
+  const bigquery = new BigQuery(
+    credentialsJson ? { credentials: JSON.parse(credentialsJson) } : {}
+  );
 
   const query = `
     SELECT

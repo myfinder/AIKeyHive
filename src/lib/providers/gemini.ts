@@ -1,11 +1,12 @@
 const API_KEYS_BASE = "https://apikeys.googleapis.com/v2";
 
 async function getAccessToken(): Promise<string> {
-  // Use Google Application Default Credentials
-  // In production, this uses the service account
   const { GoogleAuth } = await import("google-auth-library");
+
+  const credentialsJson = process.env.GOOGLE_CREDENTIALS_JSON;
   const auth = new GoogleAuth({
     scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    ...(credentialsJson ? { credentials: JSON.parse(credentialsJson) } : {}),
   });
   const client = await auth.getClient();
   const token = await client.getAccessToken();
