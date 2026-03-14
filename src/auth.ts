@@ -33,7 +33,7 @@ export const authConfig: NextAuthConfig = {
   ],
   callbacks: {
     async signIn({ profile }) {
-      const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN;
+      const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN?.trim();
       if (allowedDomain) {
         if (!profile?.email) return false;
         const emailDomain = profile.email.split("@").pop();
