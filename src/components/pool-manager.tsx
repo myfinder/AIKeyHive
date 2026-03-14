@@ -72,6 +72,7 @@ function AddKeyForm({ onAdded }: { onAdded: () => void }) {
 
 export function PoolManager() {
   const { pool, isLoading, mutate } = useAdminPool();
+  const [showDisabled, setShowDisabled] = useState(false);
 
   if (isLoading) {
     return (
@@ -88,13 +89,27 @@ export function PoolManager() {
   };
 
   const availableCount = pool.filter((k: PoolKey) => k.status === "available").length;
+  const filteredPool = showDisabled
+    ? pool
+    : pool.filter((k: PoolKey) => k.status !== "disabled");
 
   return (
     <div className="space-y-4">
       <AddKeyForm onAdded={() => mutate()} />
 
-      <div className="text-sm text-muted-foreground">
-        {availableCount} available / {pool.length} total
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-muted-foreground">
+          {availableCount} available / {pool.length} total
+        </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showDisabled}
+            onChange={(e) => setShowDisabled(e.target.checked)}
+            className="rounded"
+          />
+          Show disabled
+        </label>
       </div>
 
       <Table>
@@ -106,7 +121,7 @@ export function PoolManager() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {pool.map((key: PoolKey) => (
+          {filteredPool.map((key: PoolKey) => (
             <TableRow key={key.id}>
               <TableCell className="font-mono text-sm">
                 {key.keyHint || "—"}

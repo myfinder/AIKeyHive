@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 120" fill="none">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FBBF24"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="g3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FCD34D"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+    <linearGradient id="kg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1F2937"/>
+      <stop offset="100%" stop-color="#374151"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Honeycomb cluster (compact) -->
+  <polygon points="50,6 65,15 65,33 50,42 35,33 35,15" fill="url(#g2)" stroke="#B45309" stroke-width="1"/>
+  <polygon points="76,23 91,32 91,50 76,59 61,50 61,32" fill="url(#g3)" stroke="#B45309" stroke-width="1"/>
+  <polygon points="50,42 65,51 65,69 50,78 35,69 35,51" fill="url(#g1)" stroke="#B45309" stroke-width="1"/>
+  <polygon points="24,23 39,32 39,50 24,59 9,50 9,32" fill="url(#g1)" stroke="#B45309" stroke-width="1"/>
+  <polygon points="76,59 91,68 91,86 76,95 61,86 61,68" fill="url(#g1)" stroke="#B45309" stroke-width="1"/>
+  <polygon points="50,78 65,87 65,105 50,114 35,105 35,87" fill="url(#g3)" stroke="#B45309" stroke-width="1"/>
+  <polygon points="24,59 39,68 39,86 24,95 9,86 9,68" fill="url(#g2)" stroke="#B45309" stroke-width="1"/>
+
+  <!-- Key -->
+  <circle cx="50" cy="51" r="14" fill="url(#kg)" stroke="#111827" stroke-width="1.5"/>
+  <circle cx="50" cy="51" r="5.5" fill="url(#g1)" stroke="#B45309" stroke-width="1"/>
+  <rect x="48" y="65" width="4.5" height="40" rx="2" fill="url(#kg)" stroke="#111827" stroke-width="1.5"/>
+  <rect x="52.5" y="88" width="9" height="4" rx="1" fill="url(#kg)" stroke="#111827" stroke-width="1"/>
+  <rect x="52.5" y="96" width="7" height="4" rx="1" fill="url(#kg)" stroke="#111827" stroke-width="1"/>
+
+  <!-- Text: AIKeyHive -->
+  <text x="120" y="82" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="72" font-weight="700" letter-spacing="-1">
+    <tspan fill="#F59E0B">AI</tspan><tspan fill="#1F2937">Key</tspan><tspan fill="#F59E0B">Hive</tspan>
+  </text>
+</svg>

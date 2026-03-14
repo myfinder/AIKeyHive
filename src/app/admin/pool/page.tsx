@@ -12,7 +12,7 @@ import {
 
 export default function AdminPoolPage() {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex-1 bg-background">
       <Nav />
       <main className="mx-auto max-w-7xl space-y-6 p-6">
         <h1 className="text-2xl font-bold">Anthropic Key Pool</h1>

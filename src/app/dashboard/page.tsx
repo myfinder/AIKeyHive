@@ -70,7 +70,7 @@ function MonthlySummaryGuard() {
 
 export default function DashboardPage() {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex-1 bg-background">
       <Nav />
       <main className="mx-auto max-w-7xl space-y-6 p-6">
         <div className="flex items-center justify-between">
