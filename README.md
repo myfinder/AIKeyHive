@@ -8,16 +8,16 @@ Organizations using multiple LLM providers (OpenAI, Anthropic, Gemini) face a co
 
 - **Scattered key management** — Instead of juggling three admin consoles, provision OpenAI, Anthropic, and Gemini API keys from one place.
 - **No visibility into costs** — Daily cost aggregation from all providers, broken down by user, model, and provider, with trend charts.
-- **Uncontrolled spending** — Set monthly budgets at global or per-user scope. When a budget is exceeded, keys are automatically disabled.
-- **Anthropic key limitations** — Anthropic doesn't offer per-user key generation through its API. AIKeyHive works around this with a pool-based model: admins pre-provision keys, and users draw from the pool.
+- **Uncontrolled spending** — Set monthly budgets at global or per-user scope. When a budget is exceeded, keys are automatically deleted.
+- **Anthropic key limitations** — Anthropic doesn't offer key creation through its Admin API. AIKeyHive works around this with a pool-based model: admins register full key values, and users draw from the pool.
 - **Authentication silos** — SSO via any OIDC-compliant IdP (Google Workspace, Okta, Microsoft Entra ID, etc.) with optional domain restriction.
 
 ## Features
 
-- **Multi-provider key lifecycle** — Create, view, and revoke API keys for OpenAI, Anthropic, and Gemini
-- **Cost dashboard** — Daily cost sync via provider APIs and BigQuery, with charts and breakdowns by provider/model
-- **Budget enforcement** — Monthly spending limits with configurable alert thresholds and automatic key disabling
-- **Anthropic key pool** — Admin-managed pool of pre-provisioned keys assigned to users on demand
+- **Multi-provider key lifecycle** — Create, view, and delete API keys for OpenAI, Anthropic, and Gemini
+- **Cost dashboard** — Daily cost sync via provider APIs and BigQuery, with charts and breakdowns by provider/model (admin only)
+- **Budget enforcement** — Monthly spending limits with configurable alert thresholds and automatic key deletion
+- **Anthropic key pool** — Admin registers full key values; users are assigned keys from the pool with one-time display
 - **Role-based access** — User and Admin roles with separate dashboards and API permissions
 - **SSO authentication** — OIDC-based single sign-on with optional email domain allowlist
 
@@ -117,7 +117,7 @@ docker run -p 3000:3000 --env-file .env aikeyhive
 |---|---|---|
 | `/` | Login | Public |
 | `/dashboard` | Cost summary, key list, key creation | User |
-| `/costs` | Cost trends, provider/model breakdowns | User |
+| `/costs` | Cost trends, provider/model breakdowns | Admin |
 | `/admin` | User management | Admin |
 | `/admin/budgets` | Budget configuration | Admin |
 | `/admin/pool` | Anthropic key pool management | Admin |
@@ -130,7 +130,7 @@ docker run -p 3000:3000 --env-file .env aikeyhive
 |---|---|---|
 | `GET` | `/api/keys` | List your keys |
 | `POST` | `/api/keys` | Create a new key |
-| `DELETE` | `/api/keys/[id]` | Disable a key |
+| `DELETE` | `/api/keys/[id]` | Delete a key |
 | `GET` | `/api/costs` | Query cost data (`start`, `end`, `groupBy` params) |
 
 ### Admin endpoints
@@ -140,15 +140,13 @@ docker run -p 3000:3000 --env-file .env aikeyhive
 | `GET` | `/api/admin/users` | List all users |
 | `PATCH` | `/api/admin/users/[id]` | Update user role |
 | `GET/POST/DELETE` | `/api/admin/budgets` | Budget CRUD |
-| `GET/POST` | `/api/admin/pool` | Anthropic key pool management |
-| `POST` | `/api/admin/pool/sync` | Sync pool from Anthropic admin API |
+| `GET/POST` | `/api/admin/pool` | Anthropic key pool management (register key values) |
 
 ### Cron jobs
 
 | Path | Schedule | Description |
 |---|---|---|
 | `/api/cron/sync-costs` | Daily 02:00 UTC | Sync costs from all providers, enforce budgets |
-| `/api/cron/sync-anthropic-pool` | Daily 03:00 UTC | Sync Anthropic key pool |
 
 ## Architecture
 
@@ -168,7 +166,7 @@ Dashboard
     ▼
 Daily cron
   ├── Fetch costs from provider APIs → store in DB
-  └── Check budgets → auto-disable keys on overspend
+  └── Check budgets → auto-delete keys on overspend
 ```
 
 ## License
