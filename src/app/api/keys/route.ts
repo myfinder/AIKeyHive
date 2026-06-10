@@ -5,6 +5,7 @@ import { apiKeys, anthropicKeyPool, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import * as openai from "@/lib/providers/openai";
+import * as anthropic from "@/lib/providers/anthropic";
 import * as gemini from "@/lib/providers/gemini";
 import { decrypt } from "@/lib/crypto";
 
@@ -26,12 +27,72 @@ export async function GET() {
       name: apiKeys.name,
       keyHint: apiKeys.keyHint,
       createdAt: apiKeys.createdAt,
+      providerKeyId: apiKeys.providerKeyId,
     })
     .from(apiKeys)
     .where(eq(apiKeys.userId, session.user.id))
     .all();
 
-  return NextResponse.json({ data: keys });
+  // Live last-used lookup; failures degrade to null without breaking the list
+  const [openaiLastUsed, anthropicLastUsed] = await Promise.all([
+    fetchOpenAILastUsed(session.user.id, keys),
+    fetchAnthropicLastUsed(keys),
+  ]);
+
+  return NextResponse.json({
+    data: keys.map(({ providerKeyId, ...key }) => ({
+      ...key,
+      lastUsedAt:
+        (providerKeyId &&
+          (key.provider === "openai"
+            ? openaiLastUsed.get(providerKeyId)
+            : key.provider === "anthropic"
+              ? anthropicLastUsed.get(providerKeyId)
+              : null)) ||
+        null,
+    })),
+  });
+}
+
+type KeyRow = { provider: string; providerKeyId: string | null };
+
+// OpenAI: providerKeyId is the service-account id; the key list carries last_used_at
+async function fetchOpenAILastUsed(
+  userId: string,
+  keys: KeyRow[]
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (!keys.some((k) => k.provider === "openai")) return map;
+  try {
+    const user = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .get();
+    if (!user?.openaiProjectId) return map;
+    const { data } = await openai.listProjectApiKeys(user.openaiProjectId);
+    for (const key of data) {
+      const saId = key.owner?.service_account?.id;
+      if (saId && key.last_used_at) {
+        map.set(saId, new Date(key.last_used_at * 1000).toISOString());
+      }
+    }
+  } catch (error) {
+    console.error("OpenAI last-used lookup failed:", error);
+  }
+  return map;
+}
+
+async function fetchAnthropicLastUsed(
+  keys: KeyRow[]
+): Promise<Map<string, string>> {
+  if (!keys.some((k) => k.provider === "anthropic")) return new Map();
+  try {
+    return await anthropic.fetchLastUsedByApiKey();
+  } catch (error) {
+    console.error("Anthropic last-used lookup failed:", error);
+    return new Map();
+  }
 }
 
 async function getOrCreateOpenAIProject(
