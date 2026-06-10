@@ -12,6 +12,7 @@ vi.mock("@/lib/providers/openai", () => ({
     api_key: { value: "sk-test-key-value-1234", name: "key", id: "key-1" },
   }),
   deleteServiceAccount: vi.fn().mockResolvedValue(undefined),
+  listProjectApiKeys: vi.fn().mockResolvedValue({ data: [] }),
 }));
 vi.mock("@/lib/providers/gemini", () => ({
   createKey: vi.fn().mockResolvedValue({
@@ -23,12 +24,15 @@ vi.mock("@/lib/providers/gemini", () => ({
 }));
 vi.mock("@/lib/providers/anthropic", () => ({
   archiveKey: vi.fn().mockResolvedValue(undefined),
+  fetchLastUsedByApiKey: vi.fn().mockResolvedValue(new Map()),
 }));
 
 const testDbInstance = createTestDb();
 vi.mock("@/db", () => ({ db: testDbInstance.db }));
 
 import { auth } from "@/auth";
+import * as openai from "@/lib/providers/openai";
+import * as anthropic from "@/lib/providers/anthropic";
 
 describe("keys API", () => {
   beforeEach(() => {
@@ -102,6 +106,83 @@ describe("keys API", () => {
 
       expect(body.data[0]).not.toHaveProperty("userId");
       expect(body.data[0]).not.toHaveProperty("providerKeyId");
+    });
+
+    it("returns lastUsedAt from provider lookups", async () => {
+      seedUser(testDbInstance.db, {
+        id: "u1",
+        oidcSub: "sub1",
+        email: "u1@test.com",
+        openaiProjectId: "proj-123",
+      });
+      testDbInstance.db.insert(apiKeys).values([
+        { id: "k1", userId: "u1", provider: "openai", name: "oai", providerKeyId: "sa-123", keyHint: "sk-...1234" },
+        { id: "k2", userId: "u1", provider: "anthropic", name: "ant", providerKeyId: "ant-key-1", keyHint: "sk-a...5678" },
+        { id: "k3", userId: "u1", provider: "gemini", name: "gem", providerKeyId: "gk-123", keyHint: "AIza...9999" },
+      ]).run();
+
+      vi.mocked(openai.listProjectApiKeys).mockResolvedValue({
+        data: [
+          {
+            id: "key-1",
+            name: "oai",
+            redacted_value: "sk-...1234",
+            last_used_at: 1765000000,
+            owner: { type: "service_account", service_account: { id: "sa-123" } },
+          },
+        ],
+      });
+      vi.mocked(anthropic.fetchLastUsedByApiKey).mockResolvedValue(
+        new Map([["ant-key-1", "2026-06-05T00:00:00Z"]])
+      );
+
+      vi.mocked(auth).mockResolvedValue({
+        user: { id: "u1", email: "u1@test.com", role: "user" },
+        expires: "",
+      });
+
+      const { GET } = await import("@/app/api/keys/route");
+      const res = await GET();
+      const body = await res.json();
+
+      const byProvider = Object.fromEntries(
+        body.data.map((k: { provider: string; lastUsedAt: string | null }) => [
+          k.provider,
+          k.lastUsedAt,
+        ])
+      );
+      expect(byProvider.openai).toBe(new Date(1765000000 * 1000).toISOString());
+      expect(byProvider.anthropic).toBe("2026-06-05T00:00:00Z");
+      expect(byProvider.gemini).toBeNull();
+    });
+
+    it("degrades lastUsedAt to null when provider lookups fail", async () => {
+      seedUser(testDbInstance.db, {
+        id: "u1",
+        oidcSub: "sub1",
+        email: "u1@test.com",
+        openaiProjectId: "proj-123",
+      });
+      testDbInstance.db.insert(apiKeys).values([
+        { id: "k1", userId: "u1", provider: "openai", name: "oai", providerKeyId: "sa-123", keyHint: "sk-...1234" },
+        { id: "k2", userId: "u1", provider: "anthropic", name: "ant", providerKeyId: "ant-key-1", keyHint: "sk-a...5678" },
+      ]).run();
+
+      vi.mocked(openai.listProjectApiKeys).mockRejectedValue(new Error("openai down"));
+      vi.mocked(anthropic.fetchLastUsedByApiKey).mockRejectedValue(new Error("anthropic down"));
+
+      vi.mocked(auth).mockResolvedValue({
+        user: { id: "u1", email: "u1@test.com", role: "user" },
+        expires: "",
+      });
+
+      const { GET } = await import("@/app/api/keys/route");
+      const res = await GET();
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body.data).toHaveLength(2);
+      expect(body.data.every((k: { lastUsedAt: string | null }) => k.lastUsedAt === null)).toBe(true);
     });
   });
 
