@@ -116,6 +116,34 @@ describe("reconcileAnthropicKeys", () => {
   });
 });
 
+describe("OpenAI hint snipping", () => {
+  it("snips long redacted values to prefix…last4", () => {
+    const entries = reconcileOpenAIKeys(
+      [{ id: "proj_1", name: "Project One" }],
+      {
+        proj_1: [
+          {
+            id: "key_1",
+            name: "k",
+            redacted_value: "sk-proj-9eHs****************************************Mx2A",
+          },
+        ],
+      },
+      []
+    );
+    expect(entries[0].hint).toBe("sk-proj-9eHs…Mx2A");
+  });
+
+  it("keeps short hints unchanged", () => {
+    const entries = reconcileOpenAIKeys(
+      [{ id: "proj_1", name: "Project One" }],
+      { proj_1: [{ id: "key_1", name: "k", redacted_value: "sk-...abcd" }] },
+      []
+    );
+    expect(entries[0].hint).toBe("sk-...abcd");
+  });
+});
+
 describe("lastUsedAt reconciliation", () => {
   it("maps OpenAI last_used_at (unix seconds) to ISO string", () => {
     const entries = reconcileOpenAIKeys(

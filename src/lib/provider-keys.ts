@@ -35,6 +35,12 @@ export interface PoolKeyRow {
   assignedToEmail: string | null;
 }
 
+/** OpenAI redacted values can be ~50 chars of asterisks — keep first 12 + last 4 */
+function snipHint(hint: string | null): string | null {
+  if (!hint || hint.length <= 16) return hint;
+  return `${hint.slice(0, 12)}…${hint.slice(-4)}`;
+}
+
 export function reconcileOpenAIKeys(
   projects: OpenAIProject[],
   keysByProject: Record<string, OpenAIProjectApiKey[]>,
@@ -56,7 +62,7 @@ export function reconcileOpenAIKeys(
         provider: "openai" as const,
         keyId: key.id,
         name: key.name || managedRow?.keyName || null,
-        hint: key.redacted_value || null,
+        hint: snipHint(key.redacted_value || null),
         createdAt: key.created_at
           ? new Date(key.created_at * 1000).toISOString()
           : null,
