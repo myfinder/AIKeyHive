@@ -23,6 +23,7 @@ const adminItems = [
   { href: "/costs", label: "Costs" },
   { href: "/admin", label: "Users" },
   { href: "/admin/pool", label: "Key Pool" },
+  { href: "/admin/provider-keys", label: "Provider Keys" },
   { href: "/admin/budgets", label: "Budgets" },
 ];
 

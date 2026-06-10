@@ -67,6 +67,21 @@ export function useAdminPool() {
   };
 }
 
+export function useAdminProviderKeys(provider: "openai" | "anthropic" | "gemini") {
+  const { data, error, isLoading, mutate } = useSWR(
+    `/api/admin/provider-keys/${provider}`,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+
+  return {
+    keys: data?.data || [],
+    error: data?.error || (error ? "Failed to load" : null),
+    isLoading,
+    mutate,
+  };
+}
+
 export function useAdminBudgets() {
   const { data, error, isLoading, mutate } = useSWR(
     "/api/admin/budgets",
