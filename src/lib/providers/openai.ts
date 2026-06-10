@@ -18,6 +18,7 @@ export interface OpenAIProjectApiKey {
   name: string | null;
   redacted_value: string;
   created_at?: number;
+  last_used_at?: number | null;
   owner?: {
     type: "user" | "service_account";
     user?: { id: string; name?: string; email?: string };

@@ -116,6 +116,64 @@ describe("reconcileAnthropicKeys", () => {
   });
 });
 
+describe("lastUsedAt reconciliation", () => {
+  it("maps OpenAI last_used_at (unix seconds) to ISO string", () => {
+    const entries = reconcileOpenAIKeys(
+      [{ id: "proj_1", name: "Project One" }],
+      {
+        proj_1: [
+          {
+            id: "key_1",
+            name: "k",
+            redacted_value: "sk-...abcd",
+            created_at: 1700000000,
+            last_used_at: 1765000000,
+            owner: { type: "service_account", service_account: { id: "sa_1" } },
+          },
+        ],
+      },
+      []
+    );
+    expect(entries[0].lastUsedAt).toBe(
+      new Date(1765000000 * 1000).toISOString()
+    );
+  });
+
+  it("sets OpenAI lastUsedAt null when absent", () => {
+    const entries = reconcileOpenAIKeys(
+      [{ id: "proj_1", name: "Project One" }],
+      { proj_1: [{ id: "key_1", name: "k", redacted_value: "sk-...abcd" }] },
+      []
+    );
+    expect(entries[0].lastUsedAt).toBeNull();
+  });
+
+  it("attaches Anthropic lastUsedAt from the usage map", () => {
+    const entries = reconcileAnthropicKeys(
+      [
+        {
+          id: "ak_1",
+          name: "a",
+          partial_key_hint: "...aaaa",
+          workspace_id: null,
+          status: "active" as const,
+        },
+        {
+          id: "ak_2",
+          name: "b",
+          partial_key_hint: "...bbbb",
+          workspace_id: null,
+          status: "active" as const,
+        },
+      ],
+      [],
+      new Map([["ak_1", "2026-06-05T00:00:00Z"]])
+    );
+    expect(entries[0].lastUsedAt).toBe("2026-06-05T00:00:00Z");
+    expect(entries[1].lastUsedAt).toBeNull();
+  });
+});
+
 describe("reconcileGeminiKeys", () => {
   const gcpKeys = [
     {

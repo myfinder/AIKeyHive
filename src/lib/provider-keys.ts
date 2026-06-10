@@ -11,6 +11,7 @@ export interface ProviderKeyEntry {
   name: string | null;
   hint: string | null;
   createdAt: string | null;
+  lastUsedAt: string | null;
   /** Where the key lives: OpenAI project name, Anthropic workspace id, GCP project id */
   location: string;
   managed: boolean;
@@ -59,6 +60,9 @@ export function reconcileOpenAIKeys(
         createdAt: key.created_at
           ? new Date(key.created_at * 1000).toISOString()
           : null,
+        lastUsedAt: key.last_used_at
+          ? new Date(key.last_used_at * 1000).toISOString()
+          : null,
         location: project.name,
         managed: !!managedRow,
         ownerEmail: managedRow?.ownerEmail || key.owner?.user?.email || null,
@@ -74,7 +78,8 @@ export function reconcileOpenAIKeys(
 
 export function reconcileAnthropicKeys(
   orgKeys: AnthropicApiKey[],
-  poolRows: PoolKeyRow[]
+  poolRows: PoolKeyRow[],
+  lastUsedById: Map<string, string> = new Map()
 ): ProviderKeyEntry[] {
   const poolById = new Map(poolRows.map((r) => [r.anthropicKeyId, r]));
 
@@ -86,6 +91,7 @@ export function reconcileAnthropicKeys(
       name: key.name || null,
       hint: key.partial_key_hint || null,
       createdAt: null,
+      lastUsedAt: lastUsedById.get(key.id) || null,
       location: key.workspace_id || "(default workspace)",
       managed: !!poolRow,
       ownerEmail: poolRow?.assignedToEmail || null,
@@ -113,6 +119,7 @@ export function reconcileGeminiKeys(
       name: key.displayName || null,
       hint: null,
       createdAt: key.createTime || null,
+      lastUsedAt: null,
       location: gcpProjectId,
       managed: !!managedRow,
       ownerEmail: managedRow?.ownerEmail || null,
