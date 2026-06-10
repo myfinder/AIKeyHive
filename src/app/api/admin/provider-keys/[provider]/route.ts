@@ -50,7 +50,13 @@ async function listOpenAI(): Promise<ProviderKeyEntry[]> {
 }
 
 async function listAnthropic(): Promise<ProviderKeyEntry[]> {
-  const { data: orgKeys } = await anthropic.listOrgKeys();
+  const [{ data: orgKeys }, lastUsedById] = await Promise.all([
+    anthropic.listOrgKeys(),
+    anthropic.fetchLastUsedByApiKey().catch((error) => {
+      console.error("Anthropic last-used lookup failed:", error);
+      return new Map<string, string>();
+    }),
+  ]);
   const pool = await db
     .select({
       anthropicKeyId: anthropicKeyPool.anthropicKeyId,
@@ -59,7 +65,7 @@ async function listAnthropic(): Promise<ProviderKeyEntry[]> {
     .from(anthropicKeyPool)
     .leftJoin(users, eq(anthropicKeyPool.assignedTo, users.id))
     .all();
-  return reconcileAnthropicKeys(orgKeys, pool);
+  return reconcileAnthropicKeys(orgKeys, pool, lastUsedById);
 }
 
 async function listGemini(): Promise<ProviderKeyEntry[]> {
