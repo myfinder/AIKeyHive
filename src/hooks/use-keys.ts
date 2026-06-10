@@ -5,8 +5,13 @@ import type { ApiKey } from "@/db/schema";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+export type DashboardKey = Pick<
+  ApiKey,
+  "id" | "provider" | "name" | "keyHint" | "createdAt"
+> & { lastUsedAt: string | null };
+
 export function useKeys() {
-  const { data, error, isLoading, mutate } = useSWR<{ data: ApiKey[] }>(
+  const { data, error, isLoading, mutate } = useSWR<{ data: DashboardKey[] }>(
     "/api/keys",
     fetcher
   );

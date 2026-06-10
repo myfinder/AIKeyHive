@@ -58,6 +58,7 @@ export function KeyTable() {
           <TableHead>Name</TableHead>
           <TableHead>Key Hint</TableHead>
           <TableHead>Created</TableHead>
+          <TableHead>Last Used</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
@@ -75,6 +76,11 @@ export function KeyTable() {
             </TableCell>
             <TableCell className="text-sm text-muted-foreground">
               {new Date(key.createdAt).toLocaleDateString()}
+            </TableCell>
+            <TableCell className="text-sm text-muted-foreground">
+              {key.lastUsedAt
+                ? new Date(key.lastUsedAt).toLocaleDateString()
+                : "—"}
             </TableCell>
             <TableCell className="text-right">
               <Button

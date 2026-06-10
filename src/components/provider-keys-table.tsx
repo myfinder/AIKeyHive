@@ -99,6 +99,7 @@ export function ProviderKeysTable({ provider }: { provider: Provider }) {
             <TableHead>Hint</TableHead>
             <TableHead>Location</TableHead>
             <TableHead>Created</TableHead>
+            <TableHead>Last Used</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>User</TableHead>
             <TableHead className="text-right">Actions</TableHead>
@@ -117,6 +118,11 @@ export function ProviderKeysTable({ provider }: { provider: Provider }) {
               <TableCell className="text-sm text-muted-foreground">
                 {entry.createdAt
                   ? new Date(entry.createdAt).toLocaleDateString()
+                  : "—"}
+              </TableCell>
+              <TableCell className="text-sm text-muted-foreground">
+                {entry.lastUsedAt
+                  ? new Date(entry.lastUsedAt).toLocaleDateString()
                   : "—"}
               </TableCell>
               <TableCell>
