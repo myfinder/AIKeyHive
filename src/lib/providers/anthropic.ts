@@ -67,6 +67,71 @@ export async function findKeyByHint(
   );
 }
 
+interface UsageResult {
+  api_key_id: string | null;
+  uncached_input_tokens?: number;
+  cache_read_input_tokens?: number;
+  output_tokens?: number;
+}
+
+interface UsageBucket {
+  starting_at: string;
+  ending_at: string;
+  results: UsageResult[];
+}
+
+/**
+ * Estimate each API key's last-used date from the Usage Report API.
+ * Day granularity; keys unused within the lookback window are absent.
+ */
+export async function fetchLastUsedByApiKey(
+  lookbackDays = 30
+): Promise<Map<string, string>> {
+  const start = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
+  start.setUTCHours(0, 0, 0, 0);
+
+  const lastUsed = new Map<string, string>();
+  let page: string | undefined;
+  do {
+    const params = new URLSearchParams();
+    params.append("starting_at", start.toISOString());
+    params.append("bucket_width", "1d");
+    params.append("group_by[]", "api_key_id");
+    params.append("limit", "31");
+    if (page) params.append("page", page);
+
+    const res = await fetch(
+      `${ANTHROPIC_API_BASE}/organizations/usage_report/messages?${params}`,
+      { headers: headers(), cache: "no-store" }
+    );
+    if (!res.ok)
+      throw new Error(`Anthropic fetchLastUsedByApiKey failed: ${res.status}`);
+
+    const data = (await res.json()) as {
+      data: UsageBucket[];
+      has_more: boolean;
+      next_page?: string;
+    };
+    for (const bucket of data.data || []) {
+      for (const result of bucket.results || []) {
+        if (!result.api_key_id) continue;
+        const tokens =
+          (result.uncached_input_tokens || 0) +
+          (result.cache_read_input_tokens || 0) +
+          (result.output_tokens || 0);
+        if (tokens === 0) continue;
+        const prev = lastUsed.get(result.api_key_id);
+        if (!prev || bucket.starting_at > prev) {
+          lastUsed.set(result.api_key_id, bucket.starting_at);
+        }
+      }
+    }
+    page = data.has_more ? data.next_page : undefined;
+  } while (page);
+
+  return lastUsed;
+}
+
 export async function syncPoolFromAdmin() {
   const { data: keys } = await listOrgKeys(
     process.env.ANTHROPIC_WORKSPACE_ID
