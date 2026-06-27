@@ -71,6 +71,13 @@ describe("middleware", () => {
       expect(res.status).toBe(200);
     });
 
+    it("allows /api/proxy paths to use route-level bearer auth", async () => {
+      vi.mocked(getToken).mockResolvedValue(null);
+      const res = await middleware(createMockRequest("/api/proxy/openai/v1/responses"));
+      expect(res.status).toBe(200);
+      expect(getToken).not.toHaveBeenCalled();
+    });
+
     it("allows /_next paths", async () => {
       const res = await middleware(createMockRequest("/_next/static/chunk.js"));
       expect(res.status).toBe(200);

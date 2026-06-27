@@ -35,6 +35,7 @@ export async function middleware(req: NextRequest) {
   if (
     pathname === "/" ||
     pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/proxy/") ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico"
   ) {
