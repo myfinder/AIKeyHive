@@ -17,6 +17,7 @@
 - **マルチプロバイダーのキーライフサイクル管理** — OpenAI・Anthropic・Gemini の API キーの作成・一覧・削除
 - **コストダッシュボード** — プロバイダー API / BigQuery 経由で日次コストを同期し、チャート・プロバイダー/モデル別の内訳を表示（管理者のみ）
 - **予算管理** — 月額上限とアラート閾値を設定し、超過時にキーを自動削除
+- **OpenAI Proxy Mode** — OpenAI リクエスト用の仮想 `akp_...` キーを発行し、AIKeyHive 経由でキー単位の予算と同時実行数を制御
 - **Anthropic キープール** — 管理者がフルキー値を登録し、ユーザーにオンデマンドで割り当て（キーは作成時に一度だけ表示）
 - **ロールベースアクセス制御** — ユーザーと管理者の 2 ロール、それぞれ専用のダッシュボードと API 権限
 - **SSO 認証** — OIDC ベースのシングルサインオン、メールドメインのアクセス制限に対応
@@ -56,6 +57,8 @@ cp .env.example .env
 | `AUTH_OIDC_CLIENT_SECRET` | OIDC クライアントシークレット |
 
 プロバイダー固有の変数（`OPENAI_ADMIN_KEY`、`ANTHROPIC_ADMIN_KEY`、`GOOGLE_PROJECT_ID` など）は、利用するプロバイダーのもののみ設定すれば十分です。
+
+Proxy Mode を利用する場合は、追加で `OPENAI_PROXY_API_KEY`、`UPSTASH_REDIS_REST_URL`、`UPSTASH_REDIS_REST_TOKEN` が必要です。
 
 ### 3. OIDC プロバイダーの設定
 
@@ -111,12 +114,56 @@ docker build -t aikeyhive .
 docker run -p 3000:3000 --env-file .env aikeyhive
 ```
 
+## Proxy Mode 運用
+
+Proxy Key は、AIKeyHive 経由でルーティングされる仮想的な `akp_...` キーです。AIKeyHive が上流プロバイダーへ転送する前に予算予約・同時実行数制限・プロキシ利用記録を行えるため、予算管理を効かせたい用途では Proxy Key を標準にすることを推奨します。
+
+Direct Key は、プロバイダー純正の認証情報を要求するツール向けに引き続き利用できます。Direct Key のトラフィックは AIKeyHive プロキシを経由しないため、Proxy Mode ではコストガードできません。
+
+現在実装されているプロキシプロバイダー / エンドポイントは以下です：
+
+| プロバイダー | エンドポイント |
+|---|---|
+| OpenAI | `POST /api/proxy/openai/v1/responses` |
+| OpenAI | `POST /api/proxy/openai/v1/chat/completions` |
+
+Proxy Mode には以下の環境変数が必要です：
+
+| 変数名 | 用途 |
+|---|---|
+| `OPENAI_PROXY_API_KEY` | プロキシが使用するサーバー側の上流 OpenAI API キー |
+| `UPSTASH_REDIS_REST_URL` | 予算予約と同時実行数の状態管理に使う Upstash Redis REST URL |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST トークン |
+
+プロキシリクエストには、許可モデルごとに有効な `model_prices` 行も必要です。Proxy Key を発行する前に、現在の価格行をデータベースへ登録してください。
+
+Redis が利用できない場合、またはリクエストされたモデルの有効な価格がない場合、Proxy Mode は fail-closed でリクエストを拒否します。予算状態や価格が欠けている状態で enforcement が静かに迂回されることはありません。
+
+Proxy Key を使った Responses API リクエスト例：
+
+```bash
+curl https://<your-domain>/api/proxy/openai/v1/responses \
+  -H "Authorization: Bearer akp_your_proxy_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-5-mini",
+    "input": "Write a one sentence status update.",
+    "max_output_tokens": 64
+  }'
+```
+
+`max_output_tokens` は必須で、Proxy Key のポリシー内に収める必要があります。
+
+現在のプロキシ制限：リクエストはテキストのみとして検証されます。Responses の background mode は拒否されます。Chat Completions の `n` は `1` である必要があります。ダッシュボードから作成したキーでは tools は無効です。マルチモーダル、tools 利用、background workload をプロキシする場合は、明示的な対応を追加してください。
+
+Vercel / serverless でのデプロイ時は、Next route handler によるストリーミングがサポートされています。予算予約の状態は、同時実行される関数間で共有できるよう Upstash などの外部 Redis に置いてください。上流プロバイダーキーは `OPENAI_PROXY_API_KEY` としてサーバー側にのみ保存し、クライアントには Proxy Key だけを渡します。
+
 ## ページ構成
 
 | パス | 説明 | 権限 |
 |---|---|---|
 | `/` | ログイン画面 | 公開 |
-| `/dashboard` | コスト概要・キー一覧・キー作成 | ユーザー |
+| `/dashboard` | コスト概要・Direct / Proxy Key 一覧・キー作成 | ユーザー |
 | `/costs` | コスト推移チャート・プロバイダー/モデル別内訳 | 管理者 |
 | `/admin` | ユーザー管理 | 管理者 |
 | `/admin/budgets` | 予算管理 | 管理者 |
@@ -132,6 +179,16 @@ docker run -p 3000:3000 --env-file .env aikeyhive
 | `POST` | `/api/keys` | 新しいキーを作成 |
 | `DELETE` | `/api/keys/[id]` | キーを削除 |
 | `GET` | `/api/costs` | コストデータを取得 (`start`, `end`, `groupBy` パラメータ対応) |
+| `GET` | `/api/proxy-keys` | 自分の Proxy Key 一覧を取得 |
+| `POST` | `/api/proxy-keys` | Proxy Key を作成 |
+| `DELETE` | `/api/proxy-keys/[id]` | Proxy Key を失効 |
+
+### プロキシエンドポイント
+
+| メソッド | パス | 説明 |
+|---|---|---|
+| `POST` | `/api/proxy/openai/v1/responses` | OpenAI Responses API プロキシ。`Authorization: Bearer akp_...` で認証 |
+| `POST` | `/api/proxy/openai/v1/chat/completions` | OpenAI Chat Completions API プロキシ。`Authorization: Bearer akp_...` で認証 |
 
 ### 管理者向け
 
@@ -159,7 +216,8 @@ JWT セッション確立 (ロール情報含む)
     ▼
 ダッシュボード
   ├── キー作成
-  │   ├── OpenAI / Gemini → プロバイダー API で直接発行
+  │   ├── Proxy Key (akp_...) → AIKeyHive プロキシ → Upstash 予算予約 → OpenAI
+  │   ├── OpenAI / Gemini Direct Key → プロバイダー API で直接発行
   │   └── Anthropic → 管理者が用意したプールから割当
   └── コスト確認
     │

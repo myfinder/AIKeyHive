@@ -17,6 +17,7 @@ Organizations using multiple LLM providers (OpenAI, Anthropic, Gemini) face a co
 - **Multi-provider key lifecycle** — Create, view, and delete API keys for OpenAI, Anthropic, and Gemini
 - **Cost dashboard** — Daily cost sync via provider APIs and BigQuery, with charts and breakdowns by provider/model (admin only)
 - **Budget enforcement** — Monthly spending limits with configurable alert thresholds and automatic key deletion
+- **Proxy Mode for OpenAI** — Issue virtual `akp_...` keys for OpenAI requests, with per-key budget and concurrency enforcement through AIKeyHive
 - **Anthropic key pool** — Admin registers full key values; users are assigned keys from the pool with one-time display
 - **Role-based access** — User and Admin roles with separate dashboards and API permissions
 - **SSO authentication** — OIDC-based single sign-on with optional email domain allowlist
@@ -56,6 +57,8 @@ Edit `.env` — see [.env.example](.env.example) for all available options. The 
 | `AUTH_OIDC_CLIENT_SECRET` | OIDC client secret |
 
 Provider-specific variables (`OPENAI_ADMIN_KEY`, `ANTHROPIC_ADMIN_KEY`, `GOOGLE_PROJECT_ID`, etc.) are only needed for the providers you plan to use.
+
+Proxy Mode additionally requires `OPENAI_PROXY_API_KEY`, `UPSTASH_REDIS_REST_URL`, and `UPSTASH_REDIS_REST_TOKEN`.
 
 ### 3. Configure your OIDC provider
 
@@ -111,12 +114,56 @@ docker build -t aikeyhive .
 docker run -p 3000:3000 --env-file .env aikeyhive
 ```
 
+## Proxy Mode operations
+
+Proxy Keys are virtual `akp_...` keys routed through AIKeyHive. They are the recommended default for budget enforcement because AIKeyHive can reserve spend, enforce concurrency limits, and record proxy usage before forwarding the request upstream.
+
+Direct Keys remain available for tools that require provider-native credentials. Direct-key traffic goes to the provider outside the AIKeyHive proxy, so it cannot be cost-guarded by Proxy Mode.
+
+Currently implemented proxy provider/endpoints:
+
+| Provider | Endpoint |
+|---|---|
+| OpenAI | `POST /api/proxy/openai/v1/responses` |
+| OpenAI | `POST /api/proxy/openai/v1/chat/completions` |
+
+Proxy Mode requires:
+
+| Variable | Purpose |
+|---|---|
+| `OPENAI_PROXY_API_KEY` | Server-side upstream OpenAI API key used by the proxy |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL for budget reservations and concurrency state |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
+
+Proxy requests also require an active `model_prices` row for each allowed model. Add current pricing rows to the database before issuing Proxy Keys.
+
+Proxy Mode fails closed when Redis is unavailable or no active price is configured for the requested model, so missing budget state or pricing cannot silently bypass enforcement.
+
+Example Responses API request using a Proxy Key:
+
+```bash
+curl https://<your-domain>/api/proxy/openai/v1/responses \
+  -H "Authorization: Bearer akp_your_proxy_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-5-mini",
+    "input": "Write a one sentence status update.",
+    "max_output_tokens": 64
+  }'
+```
+
+`max_output_tokens` must be set and must be within the Proxy Key policy.
+
+Current proxy limitations: requests are validated as text-only; Responses background mode is rejected; Chat Completions `n` must be `1`; tools are disabled for keys created from the dashboard. Add explicit support before proxying multimodal, tool-using, or background workloads.
+
+Vercel/serverless deployment note: streaming is supported by the Next route handlers. Redis reservation state must be external, such as Upstash, so concurrent invocations share budget and concurrency state. Store the provider upstream key only server-side as `OPENAI_PROXY_API_KEY`; clients should receive only Proxy Keys.
+
 ## Pages
 
 | Path | Description | Access |
 |---|---|---|
 | `/` | Login | Public |
-| `/dashboard` | Cost summary, key list, key creation | User |
+| `/dashboard` | Cost summary, direct/proxy key list, key creation | User |
 | `/costs` | Cost trends, provider/model breakdowns | Admin |
 | `/admin` | User management | Admin |
 | `/admin/budgets` | Budget configuration | Admin |
@@ -132,6 +179,16 @@ docker run -p 3000:3000 --env-file .env aikeyhive
 | `POST` | `/api/keys` | Create a new key |
 | `DELETE` | `/api/keys/[id]` | Delete a key |
 | `GET` | `/api/costs` | Query cost data (`start`, `end`, `groupBy` params) |
+| `GET` | `/api/proxy-keys` | List your Proxy Keys |
+| `POST` | `/api/proxy-keys` | Create a Proxy Key |
+| `DELETE` | `/api/proxy-keys/[id]` | Revoke a Proxy Key |
+
+### Proxy endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/proxy/openai/v1/responses` | OpenAI Responses API proxy; authenticate with `Authorization: Bearer akp_...` |
+| `POST` | `/api/proxy/openai/v1/chat/completions` | OpenAI Chat Completions API proxy; authenticate with `Authorization: Bearer akp_...` |
 
 ### Admin endpoints
 
@@ -159,7 +216,8 @@ JWT session with role
     ▼
 Dashboard
   ├── Key creation
-  │   ├── OpenAI / Gemini → direct provisioning via provider API
+  │   ├── Proxy Keys (akp_...) → AIKeyHive proxy → Upstash budget reservation → OpenAI
+  │   ├── OpenAI / Gemini direct keys → direct provisioning via provider API
   │   └── Anthropic → assign from admin-managed pool
   └── Cost overview
     │
