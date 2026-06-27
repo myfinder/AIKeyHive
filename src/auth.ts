@@ -23,14 +23,21 @@ declare module "next-auth" {
   }
 }
 
+const oidcIssuer = process.env.AUTH_OIDC_ISSUER?.trim();
+const oidcClientId = process.env.AUTH_OIDC_CLIENT_ID?.trim();
+const oidcClientSecret = process.env.AUTH_OIDC_CLIENT_SECRET?.trim();
+
 export const authConfig: NextAuthConfig = {
-  providers: [
-    Okta({
-      clientId: process.env.AUTH_OIDC_CLIENT_ID?.trim(),
-      clientSecret: process.env.AUTH_OIDC_CLIENT_SECRET?.trim(),
-      issuer: process.env.AUTH_OIDC_ISSUER?.trim(),
-    }),
-  ],
+  providers:
+    oidcIssuer && oidcClientId && oidcClientSecret
+      ? [
+          Okta({
+            clientId: oidcClientId,
+            clientSecret: oidcClientSecret,
+            issuer: oidcIssuer,
+          }),
+        ]
+      : [],
   callbacks: {
     async signIn({ profile }) {
       const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN?.trim();
