@@ -5,10 +5,59 @@ import type { ApiKey } from "@/db/schema";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+function errorMessageFromBody(body: unknown) {
+  if (
+    body &&
+    typeof body === "object" &&
+    "error" in body &&
+    typeof body.error === "string"
+  ) {
+    return body.error;
+  }
+  return "Failed to load";
+}
+
+async function throwingJsonFetcher<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+
+  if (!res.ok) {
+    throw new Error(errorMessageFromBody(body));
+  }
+
+  return body as T;
+}
+
 export type DashboardKey = Pick<
   ApiKey,
   "id" | "provider" | "name" | "keyHint" | "createdAt"
 > & { lastUsedAt: string | null };
+
+export type DashboardProxyKey = {
+  id: string;
+  name: string;
+  keyHint: string;
+  status: "active" | "revoked";
+  createdAt: string;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  policy: {
+    provider: "openai" | "anthropic" | "gemini";
+    allowedModels: string[];
+    hourlyLimitUsd: number;
+    dailyLimitUsd: number;
+    monthlyLimitUsd: number;
+    maxRequestUsd: number;
+    maxOutputTokens: number;
+    maxConcurrency: number;
+    allowTools: boolean;
+  };
+};
 
 export function useKeys() {
   const { data, error, isLoading, mutate } = useSWR<{ data: DashboardKey[] }>(
@@ -20,6 +69,20 @@ export function useKeys() {
     keys: data?.data || [],
     isLoading,
     isError: !!error,
+    mutate,
+  };
+}
+
+export function useProxyKeys() {
+  const { data, error, isLoading, mutate } = useSWR<{
+    data: DashboardProxyKey[];
+  }>("/api/proxy-keys", throwingJsonFetcher);
+
+  return {
+    keys: data?.data || [],
+    isLoading,
+    isError: !!error,
+    error: error instanceof Error ? error.message : null,
     mutate,
   };
 }

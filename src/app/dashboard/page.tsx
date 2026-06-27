@@ -3,15 +3,19 @@
 import { Nav } from "@/components/nav";
 import { KeyTable } from "@/components/key-table";
 import { KeyCreateDialog } from "@/components/key-create-dialog";
+import { ProxyKeyCreateDialog } from "@/components/proxy-key-create-dialog";
+import { ProxyKeyTable } from "@/components/proxy-key-table";
 import { useCosts } from "@/hooks/use-keys";
 import { useSession } from "next-auth/react";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 function MonthlySummary() {
   const now = new Date();
@@ -73,19 +77,40 @@ export default function DashboardPage() {
     <div className="flex-1 bg-background">
       <Nav />
       <main className="mx-auto max-w-7xl space-y-6 p-6">
-        <div className="flex items-center justify-between">
+        <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
-          <KeyCreateDialog />
         </div>
 
         <MonthlySummaryGuard />
 
         <Card>
           <CardHeader>
-            <CardTitle>Your API Keys</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              Proxy Keys
+              <Badge variant="secondary">Recommended</Badge>
+            </CardTitle>
             <CardDescription>
-              Manage your API keys across all providers
+              Virtual keys routed through AIKeyHive with model, budget, token,
+              and concurrency controls.
             </CardDescription>
+            <CardAction>
+              <ProxyKeyCreateDialog />
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            <ProxyKeyTable />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Direct Keys</CardTitle>
+            <CardDescription>
+              Provider credentials for tools that require direct provider keys.
+            </CardDescription>
+            <CardAction>
+              <KeyCreateDialog />
+            </CardAction>
           </CardHeader>
           <CardContent>
             <KeyTable />
