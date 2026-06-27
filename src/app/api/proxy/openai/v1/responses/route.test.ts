@@ -397,7 +397,7 @@ describe("POST /api/proxy/openai/v1/responses", () => {
     expect(refundReservation).toHaveBeenCalledWith({
       reservationId: "reservation-responses",
       proxyKeyId: "proxy-key-openai",
-      actualCostUsd: 0,
+      actualCostUsd: 0.0025,
       reservedMicroUsd: 2500,
     });
   });
@@ -423,7 +423,7 @@ describe("POST /api/proxy/openai/v1/responses", () => {
     expect(refundReservation).toHaveBeenCalledWith({
       reservationId: "reservation-responses",
       proxyKeyId: "proxy-key-openai",
-      actualCostUsd: 0,
+      actualCostUsd: 0.0025,
       reservedMicroUsd: 2500,
     });
   });
@@ -477,6 +477,40 @@ describe("POST /api/proxy/openai/v1/responses", () => {
     });
   });
 
+  it("does not settle accounting on a malformed SSE frame when final usage arrives later", async () => {
+    seedProxyKey();
+    const sse =
+      'event: response.output_text.delta\ndata: {"delta":\n\n' +
+      'event: response.completed\ndata: {"response":{"id":"resp_after_malformed","usage":{"input_tokens":100,"output_tokens":20}}}\n\n';
+    fetchMock.mockResolvedValue(sseResponse(sse, { status: 200 }));
+
+    const res = await POST(
+      request({
+        model: "gpt-5-mini",
+        input: "hello",
+        max_output_tokens: 50,
+        stream: true,
+      })
+    );
+
+    await expect(res.text()).resolves.toBe(sse);
+    expect(markUsageUnknown).not.toHaveBeenCalled();
+    expect(markUsageSucceeded).toHaveBeenCalledWith({
+      usageEventId: "usage-responses",
+      actualCostUsd: 0.0004,
+      inputTokens: 100,
+      outputTokens: 20,
+      rawUsage: { input_tokens: 100, output_tokens: 20 },
+      providerRequestId: "resp_after_malformed",
+    });
+    expect(refundReservation).toHaveBeenCalledWith({
+      reservationId: "reservation-responses",
+      proxyKeyId: "proxy-key-openai",
+      actualCostUsd: 0.0004,
+      reservedMicroUsd: 2500,
+    });
+  });
+
   it("marks streaming usage unknown and cleans up when final usage is missing", async () => {
     seedProxyKey();
     const sse = 'event: response.output_text.delta\ndata: {"delta":"hi"}\n\n';
@@ -502,7 +536,7 @@ describe("POST /api/proxy/openai/v1/responses", () => {
     expect(refundReservation).toHaveBeenCalledWith({
       reservationId: "reservation-responses",
       proxyKeyId: "proxy-key-openai",
-      actualCostUsd: 0,
+      actualCostUsd: 0.0025,
       reservedMicroUsd: 2500,
     });
   });
@@ -554,7 +588,7 @@ describe("POST /api/proxy/openai/v1/responses", () => {
     expect(refundReservation).toHaveBeenCalledWith({
       reservationId: "reservation-responses",
       proxyKeyId: "proxy-key-openai",
-      actualCostUsd: 0,
+      actualCostUsd: 0.0025,
       reservedMicroUsd: 2500,
     });
   });

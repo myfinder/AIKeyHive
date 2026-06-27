@@ -297,7 +297,7 @@ describe("POST /api/proxy/openai/v1/chat/completions", () => {
     expect(refundReservation).toHaveBeenCalledWith({
       reservationId: "reservation-chat",
       proxyKeyId: "proxy-key-chat",
-      actualCostUsd: 0,
+      actualCostUsd: 0.003,
       reservedMicroUsd: 3000,
     });
   });

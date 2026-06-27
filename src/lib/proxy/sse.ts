@@ -15,6 +15,7 @@ export function observeSseStream(input: {
   onUsage: (usage: ObservedSseUsage) => void | Promise<void>;
   onDone: () => void | Promise<void>;
   onError: (error: unknown) => void | Promise<void>;
+  onParseError?: (error: unknown) => void | Promise<void>;
   onCancel?: (reason: unknown) => void | Promise<void>;
 }): ReadableStream<Uint8Array> {
   const reader = input.body.getReader();
@@ -95,7 +96,7 @@ export function observeSseStream(input: {
     try {
       parsed = JSON.parse(frame.data) as unknown;
     } catch (error) {
-      await notifyError(error);
+      await notifyParseError(error);
       return;
     }
 
@@ -126,6 +127,18 @@ export function observeSseStream(input: {
       await input.onError(error);
     } catch {
       // Accounting callbacks must not tear down the pass-through stream.
+    }
+  }
+
+  async function notifyParseError(error: unknown): Promise<void> {
+    try {
+      if (input.onParseError) {
+        await input.onParseError(error);
+      } else {
+        await input.onError(error);
+      }
+    } catch {
+      // Observation callbacks must not tear down the pass-through stream.
     }
   }
 }

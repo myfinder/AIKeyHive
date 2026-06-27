@@ -139,7 +139,7 @@ export async function handleOpenAIProxyRequest(input: {
     if (isStreaming) {
       if (!upstream.body) {
         await safeMarkUnknown(usageEventId);
-        await cleanupReservation(auth.proxyKey.id, reservation, 0);
+        await cleanupUnknownReservation(auth.proxyKey.id, reservation);
         return filteredUpstreamResponse(upstream);
       }
 
@@ -157,7 +157,7 @@ export async function handleOpenAIProxyRequest(input: {
       const settleUnknown = (providerRequestId?: string): Promise<void> =>
         settleOnce(async () => {
           await safeMarkUnknown(usageEventId, providerRequestId);
-          await cleanupReservation(auth.proxyKey.id, streamingReservation, 0);
+          await cleanupUnknownReservation(auth.proxyKey.id, streamingReservation);
         });
       const settleSucceeded = (usage: StreamingUsage): Promise<void> =>
         settleOnce(async () => {
@@ -168,7 +168,10 @@ export async function handleOpenAIProxyRequest(input: {
           });
           if (!priceResult.ok) {
             await safeMarkUnknown(usageEventId, usage.providerRequestId);
-            await cleanupReservation(auth.proxyKey.id, streamingReservation, 0);
+            await cleanupUnknownReservation(
+              auth.proxyKey.id,
+              streamingReservation
+            );
             return;
           }
 
@@ -198,6 +201,10 @@ export async function handleOpenAIProxyRequest(input: {
         onUsage: (usage) => settleSucceeded(usage),
         onDone: () => settleUnknown(),
         onError: () => settleUnknown(),
+        onParseError: () => {
+          // Malformed observation frames should not settle accounting while
+          // the upstream stream can still produce a final usage frame.
+        },
         onCancel: () => settleUnknown(),
       });
       return filteredUpstreamResponse(
@@ -212,7 +219,7 @@ export async function handleOpenAIProxyRequest(input: {
     const upstreamJson = await readJsonClone(upstream);
     if (!upstreamJson.ok) {
       await safeMarkUnknown(usageEventId);
-      await cleanupReservation(auth.proxyKey.id, reservation, 0);
+      await cleanupUnknownReservation(auth.proxyKey.id, reservation);
       return filteredUpstreamResponse(upstream);
     }
 
@@ -220,7 +227,7 @@ export async function handleOpenAIProxyRequest(input: {
     const providerRequestId = extractProviderRequestId(upstreamJson.value);
     if (!usage) {
       await safeMarkUnknown(usageEventId, providerRequestId);
-      await cleanupReservation(auth.proxyKey.id, reservation, 0);
+      await cleanupUnknownReservation(auth.proxyKey.id, reservation);
       return filteredUpstreamResponse(upstream);
     }
 
@@ -231,7 +238,7 @@ export async function handleOpenAIProxyRequest(input: {
     });
     if (!priceResult.ok) {
       await safeMarkUnknown(usageEventId, providerRequestId);
-      await cleanupReservation(auth.proxyKey.id, reservation, 0);
+      await cleanupUnknownReservation(auth.proxyKey.id, reservation);
       return filteredUpstreamResponse(upstream);
     }
 
@@ -328,6 +335,17 @@ async function cleanupReservation(
       })
     ),
   ]);
+}
+
+async function cleanupUnknownReservation(
+  proxyKeyId: string,
+  reservation: ReservationState
+): Promise<void> {
+  await cleanupReservation(
+    proxyKeyId,
+    reservation,
+    reservation.reservedMicroUsd / 1_000_000
+  );
 }
 
 async function safeMarkSucceeded(

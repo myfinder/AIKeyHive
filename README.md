@@ -135,7 +135,7 @@ Proxy Mode requires:
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL for budget reservations and concurrency state |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
 
-Proxy requests also require an active `model_prices` row for each allowed model. Admins can manage the catalog through `/api/admin/model-prices` and explicitly seed default OpenAI prices for `gpt-5-mini` and `gpt-5-nano` with `POST /api/admin/model-prices/seed`.
+Proxy requests also require an active `model_prices` row for each allowed model. Admins can manage the catalog through `/api/admin/model-prices`, deactivate old active prices with `PATCH /api/admin/model-prices`, and explicitly seed default OpenAI prices for `gpt-5-mini` and `gpt-5-nano` with `POST /api/admin/model-prices/seed`.
 
 Proxy Mode fails closed when Redis is unavailable or no active price is configured for the requested model, so missing budget state or pricing cannot silently bypass enforcement.
 
@@ -198,7 +198,7 @@ Vercel/serverless deployment note: streaming is supported by the Next route hand
 | `PATCH` | `/api/admin/users/[id]` | Update user role |
 | `GET/POST/DELETE` | `/api/admin/budgets` | Budget CRUD |
 | `GET/POST` | `/api/admin/pool` | Anthropic key pool management (register key values) |
-| `GET/POST` | `/api/admin/model-prices` | Model price catalog management |
+| `GET/POST/PATCH` | `/api/admin/model-prices` | Model price catalog management |
 | `POST` | `/api/admin/model-prices/seed` | Seed default OpenAI model prices |
 
 ### Cron jobs

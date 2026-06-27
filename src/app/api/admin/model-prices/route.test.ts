@@ -14,9 +14,9 @@ function adminSession() {
   });
 }
 
-function jsonRequest(body: unknown) {
+function jsonRequest(body: unknown, method = "POST") {
   return new Request("http://localhost/api/admin/model-prices", {
-    method: "POST",
+    method,
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
   });
@@ -338,6 +338,104 @@ describe("admin model prices API", () => {
 
       expect(res.status).toBe(200);
       expect(testDbInstance.db.select().from(modelPrices).all()).toHaveLength(2);
+    });
+  });
+
+  describe("PATCH /api/admin/model-prices", () => {
+    it("returns 403 for non-admin", async () => {
+      vi.mocked(auth).mockResolvedValue({
+        user: { id: "user-1", email: "user@test.com", role: "user" },
+        expires: "",
+      });
+
+      const { PATCH } = await import("@/app/api/admin/model-prices/route");
+      const res = await PATCH(
+        jsonRequest({ id: "price-1", active: false }, "PATCH") as never
+      );
+
+      expect(res.status).toBe(403);
+    });
+
+    it("deactivates an active price so a replacement active price can be inserted", async () => {
+      adminSession();
+      testDbInstance.db
+        .insert(modelPrices)
+        .values({
+          id: "price-old",
+          provider: "openai",
+          model: "gpt-5-mini",
+          inputUsdPer1m: 0.25,
+          cachedInputUsdPer1m: 0.025,
+          outputUsdPer1m: 2,
+          active: 1,
+        })
+        .run();
+
+      const route = await import("@/app/api/admin/model-prices/route");
+      const patch = await route.PATCH(
+        jsonRequest({ id: "price-old", active: false }, "PATCH") as never
+      );
+      const patchBody = await patch.json();
+
+      expect(patch.status).toBe(200);
+      expect(patchBody.data).toMatchObject({
+        id: "price-old",
+        active: false,
+      });
+
+      const post = await route.POST(
+        jsonRequest({
+          provider: "openai",
+          model: "gpt-5-mini",
+          inputUsdPer1m: 0.5,
+          cachedInputUsdPer1m: 0.05,
+          outputUsdPer1m: 4,
+          active: true,
+        }) as never
+      );
+
+      expect(post.status).toBe(200);
+      const rows = testDbInstance.db.select().from(modelPrices).all();
+      expect(rows).toHaveLength(2);
+      expect(rows.filter((row) => row.active === 1)).toHaveLength(1);
+    });
+
+    it("rejects activating a historical price while another active price exists", async () => {
+      adminSession();
+      testDbInstance.db
+        .insert(modelPrices)
+        .values([
+          {
+            id: "price-active",
+            provider: "openai",
+            model: "gpt-5-mini",
+            inputUsdPer1m: 0.25,
+            cachedInputUsdPer1m: 0.025,
+            outputUsdPer1m: 2,
+            active: 1,
+          },
+          {
+            id: "price-historical",
+            provider: "openai",
+            model: "gpt-5-mini",
+            inputUsdPer1m: 0.2,
+            cachedInputUsdPer1m: 0.02,
+            outputUsdPer1m: 1.8,
+            active: 0,
+          },
+        ])
+        .run();
+
+      const { PATCH } = await import("@/app/api/admin/model-prices/route");
+      const res = await PATCH(
+        jsonRequest({ id: "price-historical", active: true }, "PATCH") as never
+      );
+      const body = await res.json();
+
+      expect(res.status).toBe(409);
+      expect(body.error).toContain("active price");
+      const rows = testDbInstance.db.select().from(modelPrices).all();
+      expect(rows.filter((row) => row.active === 1)).toHaveLength(1);
     });
   });
 });
