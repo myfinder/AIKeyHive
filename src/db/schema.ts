@@ -79,8 +79,110 @@ export const budgets = sqliteTable("budgets", {
   alertThresholdPct: integer("alert_threshold_pct").notNull().default(80),
 });
 
+export const proxyKeys = sqliteTable("proxy_keys", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  name: text("name").notNull(),
+  keyHash: text("key_hash").unique().notNull(),
+  keyHint: text("key_hint").notNull(),
+  status: text("status", { enum: ["active", "revoked"] })
+    .notNull()
+    .default("active"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+  revokedAt: text("revoked_at"),
+  lastUsedAt: text("last_used_at"),
+});
+
+export const proxyKeyPolicies = sqliteTable("proxy_key_policies", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  proxyKeyId: text("proxy_key_id")
+    .notNull()
+    .references(() => proxyKeys.id),
+  provider: text("provider", {
+    enum: ["openai", "anthropic", "gemini"],
+  }).notNull(),
+  allowedModelsJson: text("allowed_models_json").notNull(),
+  hourlyLimitUsd: real("hourly_limit_usd").notNull(),
+  dailyLimitUsd: real("daily_limit_usd").notNull(),
+  monthlyLimitUsd: real("monthly_limit_usd").notNull(),
+  maxRequestUsd: real("max_request_usd").notNull(),
+  maxOutputTokens: integer("max_output_tokens").notNull(),
+  maxConcurrency: integer("max_concurrency").notNull().default(1),
+  allowTools: integer("allow_tools").notNull().default(0),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+export const modelPrices = sqliteTable("model_prices", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  provider: text("provider", {
+    enum: ["openai", "anthropic", "gemini"],
+  }).notNull(),
+  model: text("model").notNull(),
+  inputUsdPer1m: real("input_usd_per_1m").notNull(),
+  cachedInputUsdPer1m: real("cached_input_usd_per_1m"),
+  outputUsdPer1m: real("output_usd_per_1m").notNull(),
+  active: integer("active").notNull().default(1),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+export const proxyUsageEvents = sqliteTable("proxy_usage_events", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  proxyKeyId: text("proxy_key_id")
+    .notNull()
+    .references(() => proxyKeys.id),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  provider: text("provider", {
+    enum: ["openai", "anthropic", "gemini"],
+  }).notNull(),
+  endpoint: text("endpoint", {
+    enum: ["responses", "chat_completions"],
+  }).notNull(),
+  model: text("model").notNull(),
+  status: text("status", {
+    enum: ["reserved", "succeeded", "failed", "usage_unknown"],
+  }).notNull(),
+  requestId: text("request_id"),
+  providerRequestId: text("provider_request_id"),
+  estimatedCostUsd: real("estimated_cost_usd").notNull(),
+  reservedCostUsd: real("reserved_cost_usd").notNull(),
+  actualCostUsd: real("actual_cost_usd"),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  rawUsageJson: text("raw_usage_json"),
+  errorCode: text("error_code"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+  completedAt: text("completed_at"),
+});
+
 export type User = typeof users.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type AnthropicPoolKey = typeof anthropicKeyPool.$inferSelect;
 export type CostSnapshot = typeof costSnapshots.$inferSelect;
 export type Budget = typeof budgets.$inferSelect;
+export type ProxyKey = typeof proxyKeys.$inferSelect;
+export type ProxyKeyPolicy = typeof proxyKeyPolicies.$inferSelect;
+export type ModelPrice = typeof modelPrices.$inferSelect;
+export type ProxyUsageEvent = typeof proxyUsageEvents.$inferSelect;
