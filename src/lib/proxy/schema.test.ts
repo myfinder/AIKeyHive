@@ -159,4 +159,43 @@ describe("proxy mode schema", () => {
       }
     }
   });
+
+  it("prevents duplicate active model prices for the same provider and model", () => {
+    testDbInstance.db
+      .insert(modelPrices)
+      .values({
+        provider: "openai",
+        model: "gpt-5-mini",
+        inputUsdPer1m: 0.25,
+        outputUsdPer1m: 2,
+        active: 1,
+      })
+      .run();
+
+    expect(() =>
+      testDbInstance.db
+        .insert(modelPrices)
+        .values({
+          provider: "openai",
+          model: "gpt-5-mini",
+          inputUsdPer1m: 0.5,
+          outputUsdPer1m: 4,
+          active: 1,
+        })
+        .run()
+    ).toThrow();
+
+    expect(() =>
+      testDbInstance.db
+        .insert(modelPrices)
+        .values({
+          provider: "openai",
+          model: "gpt-5-mini",
+          inputUsdPer1m: 0.5,
+          outputUsdPer1m: 4,
+          active: 0,
+        })
+        .run()
+    ).not.toThrow();
+  });
 });

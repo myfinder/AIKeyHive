@@ -135,7 +135,7 @@ Proxy Mode には以下の環境変数が必要です：
 | `UPSTASH_REDIS_REST_URL` | 予算予約と同時実行数の状態管理に使う Upstash Redis REST URL |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST トークン |
 
-プロキシリクエストには、許可モデルごとに有効な `model_prices` 行も必要です。Proxy Key を発行する前に、現在の価格行をデータベースへ登録してください。
+プロキシリクエストには、許可モデルごとに有効な `model_prices` 行も必要です。管理者は `/api/admin/model-prices` で価格カタログを管理し、`POST /api/admin/model-prices/seed` で `gpt-5-mini` と `gpt-5-nano` の OpenAI デフォルト価格を明示的に seed できます。
 
 Redis が利用できない場合、またはリクエストされたモデルの有効な価格がない場合、Proxy Mode は fail-closed でリクエストを拒否します。予算状態や価格が欠けている状態で enforcement が静かに迂回されることはありません。
 
@@ -198,6 +198,8 @@ Vercel / serverless でのデプロイ時は、Next route handler によるス�
 | `PATCH` | `/api/admin/users/[id]` | ユーザーロール変更 |
 | `GET/POST/DELETE` | `/api/admin/budgets` | 予算の CRUD |
 | `GET/POST` | `/api/admin/pool` | Anthropic キープール管理（フルキー値の登録） |
+| `GET/POST` | `/api/admin/model-prices` | モデル価格カタログ管理 |
+| `POST` | `/api/admin/model-prices/seed` | OpenAI デフォルトモデル価格 seed |
 
 ### Cron ジョブ
 

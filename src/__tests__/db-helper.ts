@@ -99,6 +99,10 @@ export function createTestDb() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE UNIQUE INDEX model_prices_active_provider_model_unique
+      ON model_prices (provider, model)
+      WHERE active = 1;
+
     CREATE TABLE proxy_usage_events (
       id TEXT PRIMARY KEY,
       proxy_key_id TEXT NOT NULL REFERENCES proxy_keys(id),

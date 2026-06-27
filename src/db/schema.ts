@@ -1,4 +1,10 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import {
+  sqliteTable,
+  text,
+  integer,
+  real,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 export const users = sqliteTable("users", {
@@ -125,22 +131,30 @@ export const proxyKeyPolicies = sqliteTable("proxy_key_policies", {
     .default(sql`(datetime('now'))`),
 });
 
-export const modelPrices = sqliteTable("model_prices", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  provider: text("provider", {
-    enum: ["openai", "anthropic", "gemini"],
-  }).notNull(),
-  model: text("model").notNull(),
-  inputUsdPer1m: real("input_usd_per_1m").notNull(),
-  cachedInputUsdPer1m: real("cached_input_usd_per_1m"),
-  outputUsdPer1m: real("output_usd_per_1m").notNull(),
-  active: integer("active").notNull().default(1),
-  createdAt: text("created_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
-});
+export const modelPrices = sqliteTable(
+  "model_prices",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    provider: text("provider", {
+      enum: ["openai", "anthropic", "gemini"],
+    }).notNull(),
+    model: text("model").notNull(),
+    inputUsdPer1m: real("input_usd_per_1m").notNull(),
+    cachedInputUsdPer1m: real("cached_input_usd_per_1m"),
+    outputUsdPer1m: real("output_usd_per_1m").notNull(),
+    active: integer("active").notNull().default(1),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    uniqueIndex("model_prices_active_provider_model_unique")
+      .on(table.provider, table.model)
+      .where(sql`${table.active} = 1`),
+  ]
+);
 
 export const proxyUsageEvents = sqliteTable("proxy_usage_events", {
   id: text("id")
