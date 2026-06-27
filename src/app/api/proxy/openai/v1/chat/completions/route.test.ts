@@ -5,6 +5,7 @@ import { hashProxyKeySecret } from "@/lib/proxy/key";
 import {
   createReservedUsageEvent,
   markUsageSucceeded,
+  markUsageUnknown,
 } from "@/lib/proxy/usage";
 import {
   refundReservation,
@@ -32,6 +33,7 @@ const { POST } = await import("@/app/api/proxy/openai/v1/chat/completions/route"
 
 const fetchMock = vi.fn();
 const proxySecret = "akp_chat_test_secret";
+const encoder = new TextEncoder();
 
 function request(body: unknown) {
   return new Request("http://localhost/api/proxy/openai/v1/chat/completions", {
@@ -42,6 +44,24 @@ function request(body: unknown) {
     },
     body: JSON.stringify(body),
   });
+}
+
+function sseResponse(body: string, init: ResponseInit = {}) {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(body));
+        controller.close();
+      },
+    }),
+    {
+      ...init,
+      headers: {
+        "content-type": "text/event-stream",
+        ...(init.headers ?? {}),
+      },
+    }
+  );
 }
 
 function seedProxyKey() {
@@ -206,6 +226,78 @@ describe("POST /api/proxy/openai/v1/chat/completions", () => {
       reservationId: "reservation-chat",
       proxyKeyId: "proxy-key-chat",
       actualCostUsd: 0.00046,
+      reservedMicroUsd: 3000,
+    });
+  });
+
+  it("streams Chat Completions SSE bytes and injects usage streaming options", async () => {
+    seedProxyKey();
+    const sse =
+      'data: {"id":"chatcmpl_stream","choices":[{"delta":{"content":"hi"}}]}\n\n' +
+      'data: {"id":"chatcmpl_stream","choices":[],"usage":{"prompt_tokens":80,"completion_tokens":30}}\n\n' +
+      "data: [DONE]\n\n";
+    fetchMock.mockResolvedValue(sseResponse(sse, { status: 200 }));
+
+    const res = await POST(
+      request({
+        model: "gpt-5-mini",
+        messages: [{ role: "user", content: "hello" }],
+        max_completion_tokens: 60,
+        stream: true,
+        stream_options: { foo: "bar" },
+      })
+    );
+    const [, upstreamInit] = fetchMock.mock.calls[0];
+
+    await expect(res.text()).resolves.toBe(sse);
+    expect(await new Response(upstreamInit.body).json()).toMatchObject({
+      stream: true,
+      stream_options: { foo: "bar", include_usage: true },
+    });
+    expect(markUsageSucceeded).toHaveBeenCalledWith({
+      usageEventId: "usage-chat",
+      actualCostUsd: 0.00046,
+      inputTokens: 80,
+      outputTokens: 30,
+      rawUsage: { prompt_tokens: 80, completion_tokens: 30 },
+      providerRequestId: "chatcmpl_stream",
+    });
+    expect(releaseConcurrency).toHaveBeenCalledWith({
+      reservationId: "reservation-chat",
+      proxyKeyId: "proxy-key-chat",
+    });
+    expect(refundReservation).toHaveBeenCalledWith({
+      reservationId: "reservation-chat",
+      proxyKeyId: "proxy-key-chat",
+      actualCostUsd: 0.00046,
+      reservedMicroUsd: 3000,
+    });
+  });
+
+  it("marks Chat Completions streaming usage unknown when final usage is missing", async () => {
+    seedProxyKey();
+    const sse =
+      'data: {"id":"chatcmpl_stream_missing","choices":[{"delta":{"content":"hi"}}]}\n\n' +
+      "data: [DONE]\n\n";
+    fetchMock.mockResolvedValue(sseResponse(sse, { status: 200 }));
+
+    const res = await POST(
+      request({
+        model: "gpt-5-mini",
+        messages: [{ role: "user", content: "hello" }],
+        max_completion_tokens: 60,
+        stream: true,
+      })
+    );
+
+    await expect(res.text()).resolves.toBe(sse);
+    expect(markUsageUnknown).toHaveBeenCalledWith({
+      usageEventId: "usage-chat",
+    });
+    expect(refundReservation).toHaveBeenCalledWith({
+      reservationId: "reservation-chat",
+      proxyKeyId: "proxy-key-chat",
+      actualCostUsd: 0,
       reservedMicroUsd: 3000,
     });
   });

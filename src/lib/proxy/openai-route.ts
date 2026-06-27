@@ -3,6 +3,7 @@ import { calculateTokenCostUsd, lookupModelPrice } from "@/lib/proxy/pricing";
 import { authenticateOpenAIProxyKey } from "@/lib/proxy/auth";
 import { forwardOpenAIRequest } from "@/lib/proxy/openai-forward";
 import { validateOpenAIPolicy } from "@/lib/proxy/openai-policy";
+import { observeSseStream } from "@/lib/proxy/sse";
 import {
   refundReservation,
   releaseConcurrency,
@@ -27,6 +28,13 @@ type TokenUsage = {
   rawUsage: unknown;
 };
 
+type StreamingUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  raw: unknown;
+  providerRequestId?: string;
+};
+
 const SAFE_UPSTREAM_RESPONSE_HEADERS = [
   "content-type",
   "openai-request-id",
@@ -47,14 +55,6 @@ export async function handleOpenAIProxyRequest(input: {
     body = await input.req.json();
   } catch {
     return Response.json({ error: "Invalid input" }, { status: 400 });
-  }
-
-  if (isRecord(body) && body.stream === true) {
-    return proxyError(
-      400,
-      "streaming_not_supported_in_core",
-      "Streaming requests are not supported by this proxy route yet."
-    );
   }
 
   const policyResult = validateOpenAIPolicy({
@@ -108,9 +108,14 @@ export async function handleOpenAIProxyRequest(input: {
       requestId: reservation.reservationId,
     });
 
-    const forwardResult = await forwardOpenAIRequest({
+    const upstreamBody = prepareUpstreamBody({
       endpoint: input.endpoint,
       body: policyResult.normalizedBody,
+    });
+    const isStreaming = isRecord(upstreamBody) && upstreamBody.stream === true;
+    const forwardResult = await forwardOpenAIRequest({
+      endpoint: input.endpoint,
+      body: upstreamBody,
     });
 
     if (!forwardResult.ok) {
@@ -129,6 +134,79 @@ export async function handleOpenAIProxyRequest(input: {
       await safeMarkFailed(usageEventId, errorCode);
       await cleanupReservation(auth.proxyKey.id, reservation, 0);
       return filteredUpstreamResponse(upstream);
+    }
+
+    if (isStreaming) {
+      if (!upstream.body) {
+        await safeMarkUnknown(usageEventId);
+        await cleanupReservation(auth.proxyKey.id, reservation, 0);
+        return filteredUpstreamResponse(upstream);
+      }
+
+      const streamingReservation = reservation;
+      let settled = false;
+      let settlement: Promise<void> | null = null;
+      const settleOnce = (settle: () => Promise<void>): Promise<void> => {
+        if (settled) {
+          return settlement ?? Promise.resolve();
+        }
+        settled = true;
+        settlement = settle();
+        return settlement;
+      };
+      const settleUnknown = (providerRequestId?: string): Promise<void> =>
+        settleOnce(async () => {
+          await safeMarkUnknown(usageEventId, providerRequestId);
+          await cleanupReservation(auth.proxyKey.id, streamingReservation, 0);
+        });
+      const settleSucceeded = (usage: StreamingUsage): Promise<void> =>
+        settleOnce(async () => {
+          const priceResult = lookupModelPrice({
+            prices: auth.policy.prices,
+            provider: "openai",
+            model: policyResult.model,
+          });
+          if (!priceResult.ok) {
+            await safeMarkUnknown(usageEventId, usage.providerRequestId);
+            await cleanupReservation(auth.proxyKey.id, streamingReservation, 0);
+            return;
+          }
+
+          const actualCostUsd = calculateTokenCostUsd({
+            price: priceResult.price,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+          });
+          await safeMarkSucceeded(usageEventId, {
+            actualCostUsd,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            rawUsage: usage.raw,
+            ...(usage.providerRequestId
+              ? { providerRequestId: usage.providerRequestId }
+              : {}),
+          });
+          await cleanupReservation(
+            auth.proxyKey.id,
+            streamingReservation,
+            actualCostUsd
+          );
+        });
+
+      const observedBody = observeSseStream({
+        body: upstream.body,
+        onUsage: (usage) => settleSucceeded(usage),
+        onDone: () => settleUnknown(),
+        onError: () => settleUnknown(),
+        onCancel: () => settleUnknown(),
+      });
+      return filteredUpstreamResponse(
+        new Response(observedBody, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: upstream.headers,
+        })
+      );
     }
 
     const upstreamJson = await readJsonClone(upstream);
@@ -182,6 +260,31 @@ export async function handleOpenAIProxyRequest(input: {
       "OpenAI proxy request failed."
     );
   }
+}
+
+function prepareUpstreamBody(input: {
+  endpoint: OpenAIProxyEndpoint;
+  body: unknown;
+}): unknown {
+  if (
+    input.endpoint !== "chat_completions" ||
+    !isRecord(input.body) ||
+    input.body.stream !== true
+  ) {
+    return input.body;
+  }
+
+  const streamOptions = isRecord(input.body.stream_options)
+    ? input.body.stream_options
+    : {};
+
+  return {
+    ...input.body,
+    stream_options: {
+      ...streamOptions,
+      include_usage: true,
+    },
+  };
 }
 
 function proxyError(status: number, code: string, message: string): Response {

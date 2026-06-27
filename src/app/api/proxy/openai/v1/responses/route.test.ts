@@ -34,6 +34,8 @@ const { POST } = await import("@/app/api/proxy/openai/v1/responses/route");
 
 const fetchMock = vi.fn();
 const proxySecret = "akp_responses_test_secret";
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 function request(body: unknown, token = proxySecret) {
   return new Request("http://localhost/api/proxy/openai/v1/responses", {
@@ -46,6 +48,24 @@ function request(body: unknown, token = proxySecret) {
       : { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+function sseResponse(body: string, init: ResponseInit = {}) {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(body));
+        controller.close();
+      },
+    }),
+    {
+      ...init,
+      headers: {
+        "content-type": "text/event-stream",
+        ...(init.headers ?? {}),
+      },
+    }
+  );
 }
 
 function seedProxyKey(options: { status?: "active" | "revoked"; secret?: string } = {}) {
@@ -396,6 +416,137 @@ describe("POST /api/proxy/openai/v1/responses", () => {
 
     expect(res.status).toBe(200);
     expect(body).toEqual({ id: "resp_missing_usage", model: "gpt-5-mini" });
+    expect(releaseConcurrency).toHaveBeenCalledWith({
+      reservationId: "reservation-responses",
+      proxyKeyId: "proxy-key-openai",
+    });
+    expect(refundReservation).toHaveBeenCalledWith({
+      reservationId: "reservation-responses",
+      proxyKeyId: "proxy-key-openai",
+      actualCostUsd: 0,
+      reservedMicroUsd: 2500,
+    });
+  });
+
+  it("streams responses SSE bytes and records final usage from response.completed", async () => {
+    seedProxyKey();
+    const sse =
+      'event: response.output_text.delta\ndata: {"delta":"hi"}\n\n' +
+      'event: response.completed\ndata: {"response":{"id":"resp_stream","usage":{"input_tokens":100,"output_tokens":20}}}\n\n';
+    fetchMock.mockResolvedValue(
+      sseResponse(sse, {
+        status: 200,
+        headers: {
+          "openai-request-id": "req_stream",
+          "set-cookie": "provider_session=secret",
+        },
+      })
+    );
+
+    const res = await POST(
+      request({
+        model: "gpt-5-mini",
+        input: "hello",
+        max_output_tokens: 50,
+        stream: true,
+      })
+    );
+
+    await expect(res.text()).resolves.toBe(sse);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+    expect(res.headers.get("openai-request-id")).toBe("req_stream");
+    expect(res.headers.get("set-cookie")).toBeNull();
+    expect(markUsageSucceeded).toHaveBeenCalledWith({
+      usageEventId: "usage-responses",
+      actualCostUsd: 0.0004,
+      inputTokens: 100,
+      outputTokens: 20,
+      rawUsage: { input_tokens: 100, output_tokens: 20 },
+      providerRequestId: "resp_stream",
+    });
+    expect(releaseConcurrency).toHaveBeenCalledWith({
+      reservationId: "reservation-responses",
+      proxyKeyId: "proxy-key-openai",
+    });
+    expect(refundReservation).toHaveBeenCalledWith({
+      reservationId: "reservation-responses",
+      proxyKeyId: "proxy-key-openai",
+      actualCostUsd: 0.0004,
+      reservedMicroUsd: 2500,
+    });
+  });
+
+  it("marks streaming usage unknown and cleans up when final usage is missing", async () => {
+    seedProxyKey();
+    const sse = 'event: response.output_text.delta\ndata: {"delta":"hi"}\n\n';
+    fetchMock.mockResolvedValue(sseResponse(sse, { status: 200 }));
+
+    const res = await POST(
+      request({
+        model: "gpt-5-mini",
+        input: "hello",
+        max_output_tokens: 50,
+        stream: true,
+      })
+    );
+
+    await expect(res.text()).resolves.toBe(sse);
+    expect(markUsageUnknown).toHaveBeenCalledWith({
+      usageEventId: "usage-responses",
+    });
+    expect(releaseConcurrency).toHaveBeenCalledWith({
+      reservationId: "reservation-responses",
+      proxyKeyId: "proxy-key-openai",
+    });
+    expect(refundReservation).toHaveBeenCalledWith({
+      reservationId: "reservation-responses",
+      proxyKeyId: "proxy-key-openai",
+      actualCostUsd: 0,
+      reservedMicroUsd: 2500,
+    });
+  });
+
+  it("marks streaming usage unknown and cleans up when the client cancels before final usage", async () => {
+    seedProxyKey();
+    const sse = 'event: response.output_text.delta\ndata: {"delta":"hi"}\n\n';
+    const upstreamCancel = vi.fn();
+    fetchMock.mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(sse));
+          },
+          cancel: upstreamCancel,
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }
+      )
+    );
+
+    const res = await POST(
+      request({
+        model: "gpt-5-mini",
+        input: "hello",
+        max_output_tokens: 50,
+        stream: true,
+      })
+    );
+    const reader = res.body?.getReader();
+
+    expect(reader).toBeDefined();
+    const first = await reader!.read();
+    expect(first.done).toBe(false);
+    expect(decoder.decode(first.value)).toBe(sse);
+
+    await reader!.cancel("client disconnected");
+
+    expect(upstreamCancel).toHaveBeenCalledWith("client disconnected");
+    expect(markUsageUnknown).toHaveBeenCalledWith({
+      usageEventId: "usage-responses",
+    });
     expect(releaseConcurrency).toHaveBeenCalledWith({
       reservationId: "reservation-responses",
       proxyKeyId: "proxy-key-openai",
