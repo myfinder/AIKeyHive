@@ -9,7 +9,7 @@ export default defineConfig({
     setupFiles: ["src/__tests__/setup.ts"],
     coverage: {
       provider: "v8",
-      include: ["src/lib/**", "src/middleware.ts"],
+      include: ["src/lib/**", "src/proxy.ts"],
     },
   },
   resolve: {

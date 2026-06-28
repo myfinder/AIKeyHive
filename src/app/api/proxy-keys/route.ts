@@ -476,9 +476,10 @@ export async function POST(req: NextRequest) {
   let createdServiceAccountId: string | null = null;
 
   try {
+    const ownerLabel = session.user.email || session.user.id;
     const projectId = await getOrCreateOpenAIProject(
       session.user.id,
-      session.user.email!
+      ownerLabel
     );
     const serviceAccount = await openai.createServiceAccountKey(
       projectId,
