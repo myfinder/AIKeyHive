@@ -136,7 +136,8 @@ Proxy Mode には以下の環境変数が必要です：
 | `OPENAI_ADMIN_KEY` | Proxy Key が所有する OpenAI service account key の作成・失効 |
 | `KEY_ENCRYPTION_KEY` | AIKeyHive DB に保存する上流 OpenAI キー値の暗号化 |
 
-プロキシリクエストには、許可モデルごとに有効な `model_prices` 行も必要です。管理者は `/api/admin/model-prices` で価格カタログを管理し、`POST /api/admin/model-prices/seed` で `gpt-5-mini` と `gpt-5-nano` の OpenAI デフォルト価格を明示的に seed できます。
+プロキシリクエストには、許可モデルごとに有効な `model_prices` 行も必要です。管理者は `/api/admin/model-prices` で価格カタログを管理し、`POST /api/admin/model-prices/seed` で OpenAI の標準テキストトークン価格カタログを明示的に seed できます。
+Proxy Key 作成フォームは `/api/proxy-models` を読み込み、有効な OpenAI 価格があるモデルだけを選択肢として表示します。`POST /api/proxy-keys` 側でも価格未登録モデルは拒否します。
 
 保存済みの上流キーが存在しない / 復号できない場合、DB ベースの予算予約を作成できない場合、またはリクエストされたモデルの有効な価格がない場合、Proxy Mode は fail-closed でリクエストを拒否します。予算状態や価格が欠けている状態で enforcement が静かに迂回されることはありません。
 

@@ -11,11 +11,11 @@ describe("proxy model policy copy", () => {
     );
   });
 
-  it("explains that allowed models are comma-separated model IDs", () => {
+  it("explains that allowed models come from active priced models", () => {
     expect(allowedModelsHelpText.toLowerCase()).toContain(
-      "comma-separated model ids"
+      "select one or more"
     );
-    expect(allowedModelsHelpText).toContain(defaultAllowedModelsCsv);
+    expect(allowedModelsHelpText).toContain("active OpenAI price");
   });
 
   it("provides tooltip help for every proxy key create field", () => {
@@ -48,8 +48,8 @@ describe("proxy model policy copy", () => {
     expect(proxyKeyFormFieldHelp.name).toContain("letters, numbers, hyphens, or underscores");
 
     expect(proxyKeyFormFieldHelp.allowedModels).toContain("required");
-    expect(proxyKeyFormFieldHelp.allowedModels).toContain("comma-separated");
-    expect(proxyKeyFormFieldHelp.allowedModels).toContain("active price");
+    expect(proxyKeyFormFieldHelp.allowedModels).toContain("Select");
+    expect(proxyKeyFormFieldHelp.allowedModels).toContain("active OpenAI price");
 
     expect(proxyKeyFormFieldHelp.hourlyLimitUsd).toContain("positive USD");
     expect(proxyKeyFormFieldHelp.hourlyLimitUsd).toContain("hourly <= daily");

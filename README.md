@@ -136,7 +136,8 @@ Proxy Mode requires:
 | `OPENAI_ADMIN_KEY` | Creates and revokes the OpenAI service account key owned by each Proxy Key |
 | `KEY_ENCRYPTION_KEY` | Encrypts stored upstream OpenAI key values in the AIKeyHive database |
 
-Proxy requests also require an active `model_prices` row for each allowed model. Admins can manage the catalog through `/api/admin/model-prices`, deactivate old active prices with `PATCH /api/admin/model-prices`, and explicitly seed default OpenAI prices for `gpt-5-mini` and `gpt-5-nano` with `POST /api/admin/model-prices/seed`.
+Proxy requests also require an active `model_prices` row for each allowed model. Admins can manage the catalog through `/api/admin/model-prices`, deactivate old active prices with `PATCH /api/admin/model-prices`, and explicitly seed the default OpenAI standard text-token price catalog with `POST /api/admin/model-prices/seed`.
+The Proxy Key create form reads `/api/proxy-models` and lets users select only active OpenAI priced models; `POST /api/proxy-keys` also rejects unpriced models.
 
 Proxy Mode fails closed when the stored upstream key is missing or cannot be decrypted, when the database-backed budget reservation cannot be created, or when no active price is configured for the requested model, so missing budget state or pricing cannot silently bypass enforcement.
 
