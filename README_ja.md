@@ -96,8 +96,10 @@ Proxy Mode を利用する場合は、追加で `OPENAI_ADMIN_KEY` と `KEY_ENCR
 ### 4. データベースのセットアップ
 
 ```bash
-npx drizzle-kit push
+npm run db:migrate
 ```
+
+Vercel では `next build` の前に同じ migration コマンドが自動実行されます。
 
 ### 5. 開発サーバーの起動
 

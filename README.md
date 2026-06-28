@@ -96,8 +96,10 @@ For local development, use `http://localhost:3000/api/auth/callback/oidc`.
 ### 4. Set up the database
 
 ```bash
-npx drizzle-kit push
+npm run db:migrate
 ```
+
+Vercel runs the same migration command automatically before `next build`.
 
 ### 5. Start the dev server
 

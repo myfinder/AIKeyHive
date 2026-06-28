@@ -43,6 +43,13 @@
       "when": 1773548400000,
       "tag": "0005_add_key_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1782620746235,
+      "tag": "0006_premium_genesis",
+      "breakpoints": true
     }
   ]
 }

@@ -5,8 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node scripts/db-migrate.mjs",
     "db:push": "drizzle-kit push",
-    "vercel-build": "npm run db:push || true && next build",
+    "vercel-build": "npm run db:migrate && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
