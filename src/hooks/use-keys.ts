@@ -46,6 +46,34 @@ export type DashboardProxyKey = {
   createdAt: string;
   revokedAt: string | null;
   lastUsedAt: string | null;
+  throttle: {
+    throttled: boolean;
+    reason:
+      | "hourly_budget_exceeded"
+      | "daily_budget_exceeded"
+      | "monthly_budget_exceeded"
+      | null;
+  };
+  budgetUsage: {
+    hour: {
+      usedUsd: number;
+      limitUsd: number;
+      percent: number;
+      exceeded: boolean;
+    };
+    day: {
+      usedUsd: number;
+      limitUsd: number;
+      percent: number;
+      exceeded: boolean;
+    };
+    month: {
+      usedUsd: number;
+      limitUsd: number;
+      percent: number;
+      exceeded: boolean;
+    };
+  };
   policy: {
     provider: "openai" | "anthropic" | "gemini";
     allowedModels: string[];

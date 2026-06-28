@@ -11,7 +11,7 @@ function timingSafeCompare(a: string, b: string): boolean {
   return mismatch === 0;
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   // Normalize pathname to lowercase to prevent case-sensitivity bypass
   const pathname = req.nextUrl.pathname.toLowerCase();
 

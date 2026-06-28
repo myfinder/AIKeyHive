@@ -95,6 +95,10 @@ export const proxyKeys = sqliteTable("proxy_keys", {
   name: text("name").notNull(),
   keyHash: text("key_hash").unique().notNull(),
   keyHint: text("key_hint").notNull(),
+  upstreamProjectId: text("upstream_project_id"),
+  upstreamProviderKeyId: text("upstream_provider_key_id"),
+  upstreamKeyValue: text("upstream_key_value"),
+  upstreamKeyHint: text("upstream_key_hint"),
   status: text("status", { enum: ["active", "revoked"] })
     .notNull()
     .default("active"),
@@ -191,6 +195,26 @@ export const proxyUsageEvents = sqliteTable("proxy_usage_events", {
   completedAt: text("completed_at"),
 });
 
+export const proxyBudgetReservations = sqliteTable("proxy_budget_reservations", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  proxyKeyId: text("proxy_key_id")
+    .notNull()
+    .references(() => proxyKeys.id),
+  hourWindow: text("hour_window").notNull(),
+  dayWindow: text("day_window").notNull(),
+  monthWindow: text("month_window").notNull(),
+  reservedMicroUsd: integer("reserved_micro_usd").notNull(),
+  actualMicroUsd: integer("actual_micro_usd"),
+  released: integer("released").notNull().default(0),
+  reconciled: integer("reconciled").notNull().default(0),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+  completedAt: text("completed_at"),
+});
+
 export type User = typeof users.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type AnthropicPoolKey = typeof anthropicKeyPool.$inferSelect;
@@ -200,3 +224,5 @@ export type ProxyKey = typeof proxyKeys.$inferSelect;
 export type ProxyKeyPolicy = typeof proxyKeyPolicies.$inferSelect;
 export type ModelPrice = typeof modelPrices.$inferSelect;
 export type ProxyUsageEvent = typeof proxyUsageEvents.$inferSelect;
+export type ProxyBudgetReservation =
+  typeof proxyBudgetReservations.$inferSelect;

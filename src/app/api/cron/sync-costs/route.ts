@@ -8,7 +8,7 @@ import * as geminiCosts from "@/lib/costs/gemini";
 import { enforcebudgets } from "@/lib/budget";
 
 export async function GET(req: Request) {
-  // Defense-in-depth: verify cron secret even if middleware already checked
+  // Defense-in-depth: verify cron secret even if proxy already checked
   const { verifyCronSecret } = await import("@/lib/crypto");
   if (!verifyCronSecret(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

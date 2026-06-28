@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDb, seedUser } from "@/__tests__/db-helper";
 import { modelPrices, proxyKeyPolicies, proxyKeys } from "@/db/schema";
+import { encrypt } from "@/lib/crypto";
 import { hashProxyKeySecret } from "@/lib/proxy/key";
 import {
   createReservedUsageEvent,
@@ -78,6 +79,10 @@ function seedProxyKey() {
       name: "chat-prod",
       keyHash: hashProxyKeySecret(proxySecret),
       keyHint: "akp_...secret",
+      upstreamProjectId: "proj-proxy-chat",
+      upstreamProviderKeyId: "sa-proxy-chat",
+      upstreamKeyValue: encrypt("sk-stored-upstream-chat"),
+      upstreamKeyHint: "sk-...chat",
       status: "active",
     })
     .run();
@@ -118,7 +123,6 @@ describe("POST /api/proxy/openai/v1/chat/completions", () => {
     testDbInstance.sqlite.exec("DELETE FROM proxy_keys");
     testDbInstance.sqlite.exec("DELETE FROM users");
     vi.clearAllMocks();
-    process.env.OPENAI_PROXY_API_KEY = "sk-provider-key";
     delete process.env.OPENAI_ORG_ID;
     vi.stubGlobal("fetch", fetchMock);
     vi.mocked(reserveBudget).mockResolvedValue({
@@ -157,7 +161,9 @@ describe("POST /api/proxy/openai/v1/chat/completions", () => {
     expect(res.status).toBe(200);
     expect(body.id).toBe("chatcmpl_123");
     expect(upstreamUrl).toBe("https://api.openai.com/v1/chat/completions");
-    expect(upstreamHeaders.get("Authorization")).toBe("Bearer sk-provider-key");
+    expect(upstreamHeaders.get("Authorization")).toBe(
+      "Bearer sk-stored-upstream-chat"
+    );
     expect(await new Response(upstreamInit.body).json()).toMatchObject({
       model: "gpt-5-mini",
       max_completion_tokens: 60,

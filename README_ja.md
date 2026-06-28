@@ -58,7 +58,7 @@ cp .env.example .env
 
 プロバイダー固有の変数（`OPENAI_ADMIN_KEY`、`ANTHROPIC_ADMIN_KEY`、`GOOGLE_PROJECT_ID` など）は、利用するプロバイダーのもののみ設定すれば十分です。
 
-Proxy Mode を利用する場合は、追加で `OPENAI_PROXY_API_KEY`、`UPSTASH_REDIS_REST_URL`、`UPSTASH_REDIS_REST_TOKEN` が必要です。
+Proxy Mode を利用する場合は、追加で `OPENAI_ADMIN_KEY` と `KEY_ENCRYPTION_KEY` が必要です。Proxy Key ごとに上流 OpenAI service account key を作成し、その上流キーをデータベースに暗号化して保存します。
 
 ### 3. OIDC プロバイダーの設定
 
@@ -131,13 +131,12 @@ Proxy Mode には以下の環境変数が必要です：
 
 | 変数名 | 用途 |
 |---|---|
-| `OPENAI_PROXY_API_KEY` | プロキシが使用するサーバー側の上流 OpenAI API キー |
-| `UPSTASH_REDIS_REST_URL` | 予算予約と同時実行数の状態管理に使う Upstash Redis REST URL |
-| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST トークン |
+| `OPENAI_ADMIN_KEY` | Proxy Key が所有する OpenAI service account key の作成・失効 |
+| `KEY_ENCRYPTION_KEY` | AIKeyHive DB に保存する上流 OpenAI キー値の暗号化 |
 
 プロキシリクエストには、許可モデルごとに有効な `model_prices` 行も必要です。管理者は `/api/admin/model-prices` で価格カタログを管理し、`POST /api/admin/model-prices/seed` で `gpt-5-mini` と `gpt-5-nano` の OpenAI デフォルト価格を明示的に seed できます。
 
-Redis が利用できない場合、またはリクエストされたモデルの有効な価格がない場合、Proxy Mode は fail-closed でリクエストを拒否します。予算状態や価格が欠けている状態で enforcement が静かに迂回されることはありません。
+保存済みの上流キーが存在しない / 復号できない場合、DB ベースの予算予約を作成できない場合、またはリクエストされたモデルの有効な価格がない場合、Proxy Mode は fail-closed でリクエストを拒否します。予算状態や価格が欠けている状態で enforcement が静かに迂回されることはありません。
 
 Proxy Key を使った Responses API リクエスト例：
 
@@ -156,7 +155,7 @@ curl https://<your-domain>/api/proxy/openai/v1/responses \
 
 現在のプロキシ制限：リクエストはテキストのみとして検証されます。Responses の background mode は拒否されます。Chat Completions の `n` は `1` である必要があります。ダッシュボードから作成したキーでは tools は無効です。マルチモーダル、tools 利用、background workload をプロキシする場合は、明示的な対応を追加してください。
 
-Vercel / serverless でのデプロイ時は、Next route handler によるストリーミングがサポートされています。予算予約の状態は、同時実行される関数間で共有できるよう Upstash などの外部 Redis に置いてください。上流プロバイダーキーは `OPENAI_PROXY_API_KEY` としてサーバー側にのみ保存し、クライアントには Proxy Key だけを渡します。
+Vercel / serverless でのデプロイ時は、Next route handler によるストリーミングがサポートされています。予算予約と同時実行数の状態はアプリケーション DB に保存されるため、本番ではローカルファイル DB ではなく共有された Turso / libSQL DB を使用してください。クライアントには Proxy Key だけを渡し、上流 OpenAI service account key はサーバー側で暗号化保存します。
 
 ## ページ構成
 
@@ -218,7 +217,7 @@ JWT セッション確立 (ロール情報含む)
     ▼
 ダッシュボード
   ├── キー作成
-  │   ├── Proxy Key (akp_...) → AIKeyHive プロキシ → Upstash 予算予約 → OpenAI
+  │   ├── Proxy Key (akp_...) → AIKeyHive プロキシ → DB 予算予約 → OpenAI service account key
   │   ├── OpenAI / Gemini Direct Key → プロバイダー API で直接発行
   │   └── Anthropic → 管理者が用意したプールから割当
   └── コスト確認

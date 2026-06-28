@@ -15,6 +15,9 @@ import { useProxyKeys, type DashboardProxyKey } from "@/hooks/use-keys";
 import { toast } from "sonner";
 
 function formatUsd(value: number) {
+  if (value > 0 && value < 0.01) {
+    return `$${value.toFixed(6)}`;
+  }
   return `$${value.toFixed(2)}`;
 }
 
@@ -56,6 +59,63 @@ function StatusBadge({ status }: { status: DashboardProxyKey["status"] }) {
     <Badge variant="secondary" className="bg-muted text-muted-foreground">
       revoked
     </Badge>
+  );
+}
+
+function ProxyStatusBadge({ keyData }: { keyData: DashboardProxyKey }) {
+  if (keyData.status === "active" && keyData.throttle.throttled) {
+    return (
+      <Badge variant="secondary" className="bg-amber-100 text-amber-900">
+        throttled
+      </Badge>
+    );
+  }
+
+  return <StatusBadge status={keyData.status} />;
+}
+
+function BudgetMeter({
+  label,
+  usage,
+}: {
+  label: string;
+  usage: DashboardProxyKey["budgetUsage"]["hour"];
+}) {
+  const percent = Math.min(Math.max(usage.percent, 0), 100);
+  const fillClass = usage.exceeded ? "bg-red-600" : "bg-green-600";
+
+  return (
+    <div className="grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-x-2 gap-y-0.5">
+      <div className="text-[10px] font-semibold uppercase text-muted-foreground">
+        {label}
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={`h-full rounded-full ${fillClass}`}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <div className="col-start-2 font-mono text-[10px] text-muted-foreground">
+        {formatUsd(usage.usedUsd)} / {formatUsd(usage.limitUsd)}
+        <span className={usage.exceeded ? "text-red-700" : ""}>
+          {" "}
+          · {usage.percent < 1 && usage.percent > 0
+            ? "<1"
+            : Math.round(usage.percent)}
+          %
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function BudgetMeterStack({ keyData }: { keyData: DashboardProxyKey }) {
+  return (
+    <div className="min-w-44 space-y-1.5">
+      <BudgetMeter label="Hour" usage={keyData.budgetUsage.hour} />
+      <BudgetMeter label="Day" usage={keyData.budgetUsage.day} />
+      <BudgetMeter label="Month" usage={keyData.budgetUsage.month} />
+    </div>
   );
 }
 
@@ -139,10 +199,8 @@ export function ProxyKeyTable() {
             <TableCell className="max-w-64 whitespace-normal text-sm text-muted-foreground">
               {key.policy.allowedModels.join(", ")}
             </TableCell>
-            <TableCell className="font-mono text-sm">
-              {formatUsd(key.policy.hourlyLimitUsd)} /{" "}
-              {formatUsd(key.policy.dailyLimitUsd)} /{" "}
-              {formatUsd(key.policy.monthlyLimitUsd)}
+            <TableCell className="text-sm">
+              <BudgetMeterStack keyData={key} />
             </TableCell>
             <TableCell className="text-sm">
               <div className="font-mono">{formatUsd(key.policy.maxRequestUsd)}</div>
@@ -151,7 +209,7 @@ export function ProxyKeyTable() {
               </div>
             </TableCell>
             <TableCell>
-              <StatusBadge status={key.status} />
+              <ProxyStatusBadge keyData={key} />
             </TableCell>
             <TableCell className="text-sm text-muted-foreground">
               {formatDate(key.lastUsedAt)}

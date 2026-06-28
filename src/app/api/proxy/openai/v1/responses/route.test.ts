@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDb, seedUser } from "@/__tests__/db-helper";
 import { modelPrices, proxyKeyPolicies, proxyKeys } from "@/db/schema";
+import { encrypt } from "@/lib/crypto";
 import { hashProxyKeySecret } from "@/lib/proxy/key";
 import {
   createReservedUsageEvent,
@@ -83,6 +84,10 @@ function seedProxyKey(options: { status?: "active" | "revoked"; secret?: string 
       name: "prod",
       keyHash: hashProxyKeySecret(secret),
       keyHint: "akp_...secret",
+      upstreamProjectId: "proj-proxy-openai",
+      upstreamProviderKeyId: "sa-proxy-openai",
+      upstreamKeyValue: encrypt("sk-stored-upstream-responses"),
+      upstreamKeyHint: "sk-...nses",
       status: options.status ?? "active",
     })
     .run();
@@ -123,7 +128,6 @@ describe("POST /api/proxy/openai/v1/responses", () => {
     testDbInstance.sqlite.exec("DELETE FROM proxy_keys");
     testDbInstance.sqlite.exec("DELETE FROM users");
     vi.clearAllMocks();
-    process.env.OPENAI_PROXY_API_KEY = "sk-provider-key";
     delete process.env.OPENAI_ORG_ID;
     vi.stubGlobal("fetch", fetchMock);
     vi.mocked(reserveBudget).mockResolvedValue({
@@ -196,7 +200,9 @@ describe("POST /api/proxy/openai/v1/responses", () => {
     expect(res.status).toBe(200);
     expect(body.id).toBe("resp_123");
     expect(upstreamUrl).toBe("https://api.openai.com/v1/responses");
-    expect(upstreamHeaders.get("Authorization")).toBe("Bearer sk-provider-key");
+    expect(upstreamHeaders.get("Authorization")).toBe(
+      "Bearer sk-stored-upstream-responses"
+    );
     expect(JSON.stringify(Object.fromEntries(upstreamHeaders))).not.toContain("akp_");
     expect(await new Response(upstreamInit.body).json()).toMatchObject({
       model: "gpt-5-mini",

@@ -12,9 +12,9 @@ const OPENAI_ENDPOINT_PATHS: Record<OpenAIProxyEndpoint, string> = {
 export async function forwardOpenAIRequest(input: {
   endpoint: OpenAIProxyEndpoint;
   body: unknown;
+  apiKey: string;
 }): Promise<OpenAIForwardResult> {
-  const apiKey = process.env.OPENAI_PROXY_API_KEY;
-  if (!apiKey) {
+  if (!input.apiKey) {
     return {
       ok: false,
       status: 503,
@@ -24,7 +24,7 @@ export async function forwardOpenAIRequest(input: {
   }
 
   const headers = new Headers({
-    Authorization: `Bearer ${apiKey}`,
+    Authorization: `Bearer ${input.apiKey}`,
     "Content-Type": "application/json",
   });
   if (process.env.OPENAI_ORG_ID) {

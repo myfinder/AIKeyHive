@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { createTestDb, seedUser } from "@/__tests__/db-helper";
 import {
   modelPrices,
+  proxyBudgetReservations,
   proxyKeyPolicies,
   proxyKeys,
   proxyUsageEvents,
@@ -21,11 +22,21 @@ const notNullColumns = {
     "max_output_tokens",
   ],
   proxy_usage_events: ["estimated_cost_usd", "reserved_cost_usd"],
+  proxy_budget_reservations: [
+    "proxy_key_id",
+    "hour_window",
+    "day_window",
+    "month_window",
+    "reserved_micro_usd",
+    "released",
+    "reconciled",
+  ],
 };
 
 describe("proxy mode schema", () => {
   beforeEach(() => {
     testDbInstance.sqlite.exec("DELETE FROM proxy_usage_events");
+    testDbInstance.sqlite.exec("DELETE FROM proxy_budget_reservations");
     testDbInstance.sqlite.exec("DELETE FROM proxy_key_policies");
     testDbInstance.sqlite.exec("DELETE FROM model_prices");
     testDbInstance.sqlite.exec("DELETE FROM proxy_keys");
@@ -47,11 +58,19 @@ describe("proxy mode schema", () => {
         name: "CI proxy key",
         keyHash: "sha256:test-proxy-key-hash",
         keyHint: "aikh_...abcd",
+        upstreamProjectId: "proj_123",
+        upstreamProviderKeyId: "sa_123",
+        upstreamKeyValue: "encrypted-upstream-key",
+        upstreamKeyHint: "sk-...abcd",
       })
       .returning()
       .get();
 
     expect(proxyKey.status).toBe("active");
+    expect(proxyKey.upstreamProjectId).toBe("proj_123");
+    expect(proxyKey.upstreamProviderKeyId).toBe("sa_123");
+    expect(proxyKey.upstreamKeyValue).toBe("encrypted-upstream-key");
+    expect(proxyKey.upstreamKeyHint).toBe("sk-...abcd");
     expect(proxyKey.createdAt).toEqual(expect.any(String));
 
     const policy = testDbInstance.db
@@ -134,10 +153,37 @@ describe("proxy mode schema", () => {
       outputTokens: 500,
     });
     expect(storedUsage?.createdAt).toEqual(expect.any(String));
+
+    const reservation = testDbInstance.db
+      .insert(proxyBudgetReservations)
+      .values({
+        id: "reservation-1",
+        proxyKeyId: proxyKey.id,
+        hourWindow: "2026062801",
+        dayWindow: "20260628",
+        monthWindow: "202606",
+        reservedMicroUsd: 2500,
+      })
+      .returning()
+      .get();
+
+    expect(reservation).toMatchObject({
+      id: "reservation-1",
+      proxyKeyId: "proxy-key-1",
+      hourWindow: "2026062801",
+      dayWindow: "20260628",
+      monthWindow: "202606",
+      reservedMicroUsd: 2500,
+      actualMicroUsd: null,
+      released: 0,
+      reconciled: 0,
+    });
+    expect(reservation.createdAt).toEqual(expect.any(String));
   });
 
   it("marks required proxy mode schema fields as not null", () => {
     expect(proxyKeys.keyHint.notNull).toBe(true);
+    expect(proxyKeys.upstreamKeyValue.notNull).toBe(false);
     expect(proxyKeyPolicies.allowedModelsJson.notNull).toBe(true);
     expect(proxyKeyPolicies.hourlyLimitUsd.notNull).toBe(true);
     expect(proxyKeyPolicies.dailyLimitUsd.notNull).toBe(true);
@@ -146,6 +192,8 @@ describe("proxy mode schema", () => {
     expect(proxyKeyPolicies.maxOutputTokens.notNull).toBe(true);
     expect(proxyUsageEvents.estimatedCostUsd.notNull).toBe(true);
     expect(proxyUsageEvents.reservedCostUsd.notNull).toBe(true);
+    expect(proxyBudgetReservations.proxyKeyId.notNull).toBe(true);
+    expect(proxyBudgetReservations.reservedMicroUsd.notNull).toBe(true);
 
     for (const [table, columns] of Object.entries(notNullColumns)) {
       const columnInfo = testDbInstance.sqlite

@@ -3,6 +3,10 @@ import { createTestDb, seedUser } from "@/__tests__/db-helper";
 import { proxyKeys } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+vi.mock("@/lib/providers/openai", () => ({
+  deleteServiceAccount: vi.fn().mockResolvedValue(undefined),
+}));
+
 const testDbInstance = createTestDb();
 vi.mock("@/db", () => ({ db: testDbInstance.db }));
 
@@ -31,6 +35,8 @@ describe("DELETE /api/proxy-keys/[id]", () => {
   });
 
   it("revokes the owner's own key without hard deleting it", async () => {
+    const { deleteServiceAccount } = await import("@/lib/providers/openai");
+
     seedUser(testDbInstance.db, {
       id: "u1",
       oidcSub: "sub1",
@@ -43,6 +49,8 @@ describe("DELETE /api/proxy-keys/[id]", () => {
       keyHash: "hash-mine",
       keyHint: "akp_...111111",
       status: "active",
+      upstreamProjectId: "proj-proxy",
+      upstreamProviderKeyId: "svc-proxy",
     }).run();
 
     vi.mocked(auth).mockResolvedValue({
@@ -59,6 +67,7 @@ describe("DELETE /api/proxy-keys/[id]", () => {
     });
 
     expect(res.status).toBe(200);
+    expect(deleteServiceAccount).toHaveBeenCalledWith("proj-proxy", "svc-proxy");
     const row = testDbInstance.db
       .select()
       .from(proxyKeys)
@@ -66,6 +75,56 @@ describe("DELETE /api/proxy-keys/[id]", () => {
       .get();
     expect(row?.status).toBe("revoked");
     expect(row?.revokedAt).toEqual(expect.any(String));
+  });
+
+  it("still revokes locally when upstream service account deletion fails", async () => {
+    const { deleteServiceAccount } = await import("@/lib/providers/openai");
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    vi.mocked(deleteServiceAccount).mockRejectedValueOnce(
+      new Error("OpenAI provider failure")
+    );
+
+    seedUser(testDbInstance.db, {
+      id: "u1",
+      oidcSub: "sub1",
+      email: "u1@test.com",
+    });
+    testDbInstance.db.insert(proxyKeys).values({
+      id: "pk1",
+      userId: "u1",
+      name: "mine",
+      keyHash: "hash-mine",
+      keyHint: "akp_...111111",
+      status: "active",
+      upstreamProjectId: "proj-proxy",
+      upstreamProviderKeyId: "svc-proxy",
+    }).run();
+
+    vi.mocked(auth).mockResolvedValue({
+      user: { id: "u1", email: "u1@test.com", role: "user" },
+      expires: "",
+    });
+
+    const { DELETE } = await import("@/app/api/proxy-keys/[id]/route");
+    const req = new Request("http://localhost/api/proxy-keys/pk1", {
+      method: "DELETE",
+    });
+    const res = await DELETE(req as never, {
+      params: Promise.resolve({ id: "pk1" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(deleteServiceAccount).toHaveBeenCalledWith("proj-proxy", "svc-proxy");
+    const row = testDbInstance.db
+      .select()
+      .from(proxyKeys)
+      .where(eq(proxyKeys.id, "pk1"))
+      .get();
+    expect(row?.status).toBe("revoked");
+    expect(row?.revokedAt).toEqual(expect.any(String));
+    consoleErrorSpy.mockRestore();
   });
 
   it("does not overwrite revokedAt for an already revoked owner key", async () => {

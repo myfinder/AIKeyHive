@@ -1,13 +1,37 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestDb, seedUser } from "@/__tests__/db-helper";
-import { proxyKeyPolicies, proxyKeys } from "@/db/schema";
+import {
+  proxyBudgetReservations,
+  proxyKeyPolicies,
+  proxyKeys,
+  users,
+} from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { hashProxyKeySecret } from "@/lib/proxy/key";
+import { decrypt } from "@/lib/crypto";
+
+vi.mock("@/lib/providers/openai", () => ({
+  createProject: vi.fn().mockResolvedValue({
+    id: "proj-created",
+    name: "aikeyhive-u1@test.com",
+  }),
+  createServiceAccountKey: vi.fn().mockResolvedValue({
+    id: "sa-proxy-123",
+    name: "team-prod",
+    api_key: {
+      value: "sk-proxy-upstream-key-value-1234",
+      name: "team-prod",
+      id: "key-proxy-123",
+    },
+  }),
+  deleteServiceAccount: vi.fn().mockResolvedValue(undefined),
+}));
 
 const testDbInstance = createTestDb();
 vi.mock("@/db", () => ({ db: testDbInstance.db }));
 
 import { auth } from "@/auth";
+import * as openai from "@/lib/providers/openai";
 
 const validBody = {
   name: "team-prod",
@@ -31,6 +55,7 @@ function postRequest(body: unknown) {
 describe("proxy keys API", () => {
   beforeEach(() => {
     testDbInstance.sqlite.exec("DROP TRIGGER IF EXISTS fail_proxy_policy_insert");
+    testDbInstance.sqlite.exec("DELETE FROM proxy_budget_reservations");
     testDbInstance.sqlite.exec("DELETE FROM proxy_key_policies");
     testDbInstance.sqlite.exec("DELETE FROM proxy_keys");
     testDbInstance.sqlite.exec("DELETE FROM users");
@@ -139,6 +164,82 @@ describe("proxy keys API", () => {
       expect(JSON.stringify(body)).not.toContain("hash-mine");
       expect(JSON.stringify(body)).not.toContain("hash-theirs");
     });
+
+    it("marks a proxy key as throttled when the daily budget is exhausted", async () => {
+      seedUser(testDbInstance.db, {
+        id: "u1",
+        oidcSub: "sub1",
+        email: "u1@test.com",
+      });
+      testDbInstance.db.insert(proxyKeys).values({
+        id: "pk1",
+        userId: "u1",
+        name: "mine",
+        keyHash: "hash-mine",
+        keyHint: "akp_...111111",
+        status: "active",
+      }).run();
+      testDbInstance.db.insert(proxyKeyPolicies).values({
+        id: "pol1",
+        proxyKeyId: "pk1",
+        provider: "openai",
+        allowedModelsJson: JSON.stringify(["gpt-5-nano"]),
+        hourlyLimitUsd: 1,
+        dailyLimitUsd: 0.00001,
+        monthlyLimitUsd: 1,
+        maxRequestUsd: 0.25,
+        maxOutputTokens: 1000,
+        maxConcurrency: 3,
+        allowTools: 0,
+      }).run();
+      const now = new Date();
+      testDbInstance.db.insert(proxyBudgetReservations).values({
+        id: "res1",
+        proxyKeyId: "pk1",
+        hourWindow: formatHourWindow(now),
+        dayWindow: formatDayWindow(now),
+        monthWindow: formatMonthWindow(now),
+        reservedMicroUsd: 20,
+        actualMicroUsd: 20,
+        released: 1,
+        reconciled: 1,
+      }).run();
+
+      vi.mocked(auth).mockResolvedValue({
+        user: { id: "u1", email: "u1@test.com", role: "user" },
+        expires: "",
+      });
+
+      const { GET } = await import("@/app/api/proxy-keys/route");
+      const res = await GET();
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body.data[0].throttle).toMatchObject({
+        throttled: true,
+        reason: "daily_budget_exceeded",
+      });
+      expect(body.data[0].budgetUsage).toMatchObject({
+        hour: {
+          usedUsd: 0.00002,
+          limitUsd: 1,
+          percent: 0.002,
+          exceeded: false,
+        },
+        day: {
+          usedUsd: 0.00002,
+          limitUsd: 0.00001,
+          percent: 200,
+          exceeded: true,
+        },
+        month: {
+          usedUsd: 0.00002,
+          limitUsd: 1,
+          percent: 0.002,
+          exceeded: false,
+        },
+      });
+    });
   });
 
   describe("POST /api/proxy-keys", () => {
@@ -156,6 +257,7 @@ describe("proxy keys API", () => {
         id: "u1",
         oidcSub: "sub1",
         email: "u1@test.com",
+        openaiProjectId: "proj-existing",
       });
 
       vi.mocked(auth).mockResolvedValue({
@@ -188,8 +290,11 @@ describe("proxy keys API", () => {
         },
       });
       expect(body.data).not.toHaveProperty("keyHash");
+      expect(body.data).not.toHaveProperty("upstreamKeyValue");
+      expect(body.data).not.toHaveProperty("upstreamProviderKeyId");
       expect(body).not.toHaveProperty("keyHash");
       expect(JSON.stringify(body.data)).not.toContain(body.key);
+      expect(JSON.stringify(body)).not.toContain("sk-proxy-upstream-key-value-1234");
 
       const storedKey = testDbInstance.db
         .select()
@@ -202,6 +307,23 @@ describe("proxy keys API", () => {
       expect(storedHash).not.toBe(body.key);
       expect(storedKey?.keyHint).toBe(body.data.keyHint);
       expect(JSON.stringify(body)).not.toContain(storedHash);
+      expect(openai.createProject).not.toHaveBeenCalled();
+      expect(openai.createServiceAccountKey).toHaveBeenCalledWith(
+        "proj-existing",
+        "team-prod"
+      );
+      expect(storedKey).toMatchObject({
+        upstreamProjectId: "proj-existing",
+        upstreamProviderKeyId: "sa-proxy-123",
+        upstreamKeyHint: "sk-...1234",
+      });
+      expect(storedKey?.upstreamKeyValue).toEqual(expect.any(String));
+      expect(storedKey?.upstreamKeyValue).not.toBe(
+        "sk-proxy-upstream-key-value-1234"
+      );
+      expect(decrypt(storedKey!.upstreamKeyValue!)).toBe(
+        "sk-proxy-upstream-key-value-1234"
+      );
 
       const storedPolicy = testDbInstance.db
         .select()
@@ -219,6 +341,53 @@ describe("proxy keys API", () => {
         maxConcurrency: 3,
         allowTools: 0,
       });
+    });
+
+    it("creates and stores an OpenAI project for proxy keys when the user does not have one", async () => {
+      seedUser(testDbInstance.db, {
+        id: "u1",
+        oidcSub: "sub1",
+        email: "u1@test.com",
+      });
+
+      vi.mocked(auth).mockResolvedValue({
+        user: { id: "u1", email: "u1@test.com", role: "user" },
+        expires: "",
+      });
+
+      const { POST } = await import("@/app/api/proxy-keys/route");
+      const res = await POST(postRequest(validBody) as never);
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(openai.createProject).toHaveBeenCalledWith(
+        "aikeyhive-u1@test.com"
+      );
+      expect(openai.createServiceAccountKey).toHaveBeenCalledWith(
+        "proj-created",
+        "team-prod"
+      );
+
+      const storedKey = testDbInstance.db
+        .select()
+        .from(proxyKeys)
+        .where(eq(proxyKeys.id, body.data.id))
+        .get();
+      expect(storedKey).toMatchObject({
+        upstreamProjectId: "proj-created",
+        upstreamProviderKeyId: "sa-proxy-123",
+        upstreamKeyHint: "sk-...1234",
+      });
+      expect(decrypt(storedKey!.upstreamKeyValue!)).toBe(
+        "sk-proxy-upstream-key-value-1234"
+      );
+
+      const storedUser = testDbInstance.db
+        .select()
+        .from(users)
+        .where(eq(users.id, "u1"))
+        .get();
+      expect(storedUser?.openaiProjectId).toBe("proj-created");
     });
 
     it("returns 409 for duplicate active names for the same user", async () => {
@@ -317,3 +486,15 @@ describe("proxy keys API", () => {
     });
   });
 });
+
+function formatHourWindow(now: Date) {
+  return `${formatDayWindow(now)}${String(now.getUTCHours()).padStart(2, "0")}`;
+}
+
+function formatDayWindow(now: Date) {
+  return `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, "0")}${String(now.getUTCDate()).padStart(2, "0")}`;
+}
+
+function formatMonthWindow(now: Date) {
+  return `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}

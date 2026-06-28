@@ -58,7 +58,7 @@ Edit `.env` — see [.env.example](.env.example) for all available options. The 
 
 Provider-specific variables (`OPENAI_ADMIN_KEY`, `ANTHROPIC_ADMIN_KEY`, `GOOGLE_PROJECT_ID`, etc.) are only needed for the providers you plan to use.
 
-Proxy Mode additionally requires `OPENAI_PROXY_API_KEY`, `UPSTASH_REDIS_REST_URL`, and `UPSTASH_REDIS_REST_TOKEN`.
+Proxy Mode additionally requires `OPENAI_ADMIN_KEY` and `KEY_ENCRYPTION_KEY`. It creates one upstream OpenAI service account key per Proxy Key and stores that upstream key encrypted in the database.
 
 ### 3. Configure your OIDC provider
 
@@ -131,13 +131,12 @@ Proxy Mode requires:
 
 | Variable | Purpose |
 |---|---|
-| `OPENAI_PROXY_API_KEY` | Server-side upstream OpenAI API key used by the proxy |
-| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL for budget reservations and concurrency state |
-| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
+| `OPENAI_ADMIN_KEY` | Creates and revokes the OpenAI service account key owned by each Proxy Key |
+| `KEY_ENCRYPTION_KEY` | Encrypts stored upstream OpenAI key values in the AIKeyHive database |
 
 Proxy requests also require an active `model_prices` row for each allowed model. Admins can manage the catalog through `/api/admin/model-prices`, deactivate old active prices with `PATCH /api/admin/model-prices`, and explicitly seed default OpenAI prices for `gpt-5-mini` and `gpt-5-nano` with `POST /api/admin/model-prices/seed`.
 
-Proxy Mode fails closed when Redis is unavailable or no active price is configured for the requested model, so missing budget state or pricing cannot silently bypass enforcement.
+Proxy Mode fails closed when the stored upstream key is missing or cannot be decrypted, when the database-backed budget reservation cannot be created, or when no active price is configured for the requested model, so missing budget state or pricing cannot silently bypass enforcement.
 
 Example Responses API request using a Proxy Key:
 
@@ -156,7 +155,7 @@ curl https://<your-domain>/api/proxy/openai/v1/responses \
 
 Current proxy limitations: requests are validated as text-only; Responses background mode is rejected; Chat Completions `n` must be `1`; tools are disabled for keys created from the dashboard. Add explicit support before proxying multimodal, tool-using, or background workloads.
 
-Vercel/serverless deployment note: streaming is supported by the Next route handlers. Redis reservation state must be external, such as Upstash, so concurrent invocations share budget and concurrency state. Store the provider upstream key only server-side as `OPENAI_PROXY_API_KEY`; clients should receive only Proxy Keys.
+Vercel/serverless deployment note: streaming is supported by the Next route handlers. Budget reservations and concurrency state are stored in the application database, so production deployments should use the shared Turso/libSQL database rather than a local file database. Clients should receive only Proxy Keys; upstream OpenAI service account keys remain encrypted server-side.
 
 ## Pages
 
@@ -218,7 +217,7 @@ JWT session with role
     ▼
 Dashboard
   ├── Key creation
-  │   ├── Proxy Keys (akp_...) → AIKeyHive proxy → Upstash budget reservation → OpenAI
+  │   ├── Proxy Keys (akp_...) → AIKeyHive proxy → DB budget reservation → OpenAI service account key
   │   ├── OpenAI / Gemini direct keys → direct provisioning via provider API
   │   └── Anthropic → assign from admin-managed pool
   └── Cost overview

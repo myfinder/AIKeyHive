@@ -66,6 +66,10 @@ export function createTestDb() {
       name TEXT NOT NULL,
       key_hash TEXT UNIQUE NOT NULL,
       key_hint TEXT NOT NULL,
+      upstream_project_id TEXT,
+      upstream_provider_key_id TEXT,
+      upstream_key_value TEXT,
+      upstream_key_hint TEXT,
       status TEXT NOT NULL DEFAULT 'active',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       revoked_at TEXT,
@@ -120,6 +124,20 @@ export function createTestDb() {
       output_tokens INTEGER,
       raw_usage_json TEXT,
       error_code TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
+    );
+
+    CREATE TABLE proxy_budget_reservations (
+      id TEXT PRIMARY KEY,
+      proxy_key_id TEXT NOT NULL REFERENCES proxy_keys(id),
+      hour_window TEXT NOT NULL,
+      day_window TEXT NOT NULL,
+      month_window TEXT NOT NULL,
+      reserved_micro_usd INTEGER NOT NULL,
+      actual_micro_usd INTEGER,
+      released INTEGER NOT NULL DEFAULT 0,
+      reconciled INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       completed_at TEXT
     );

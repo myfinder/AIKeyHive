@@ -51,12 +51,12 @@ describe("keys API", () => {
     });
 
     it("returns only current user's keys", async () => {
-      const user1 = seedUser(testDbInstance.db, {
+      seedUser(testDbInstance.db, {
         id: "u1",
         oidcSub: "sub1",
         email: "u1@test.com",
       });
-      const user2 = seedUser(testDbInstance.db, {
+      seedUser(testDbInstance.db, {
         id: "u2",
         oidcSub: "sub2",
         email: "u2@test.com",

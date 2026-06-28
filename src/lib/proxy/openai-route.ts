@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { decrypt } from "@/lib/crypto";
 import { calculateTokenCostUsd, lookupModelPrice } from "@/lib/proxy/pricing";
 import { authenticateOpenAIProxyKey } from "@/lib/proxy/auth";
 import { forwardOpenAIRequest } from "@/lib/proxy/openai-forward";
@@ -70,6 +71,15 @@ export async function handleOpenAIProxyRequest(input: {
     );
   }
 
+  const upstreamApiKey = decryptUpstreamApiKey(auth.proxyKey.upstreamKeyValue);
+  if (!upstreamApiKey.ok) {
+    return proxyError(
+      503,
+      "openai_upstream_key_unavailable",
+      "OpenAI proxy upstream key is unavailable."
+    );
+  }
+
   const routeRequestId = randomUUID();
   let reservation: ReservationState | null = null;
   let usageEventId: string | null = null;
@@ -116,6 +126,7 @@ export async function handleOpenAIProxyRequest(input: {
     const forwardResult = await forwardOpenAIRequest({
       endpoint: input.endpoint,
       body: upstreamBody,
+      apiKey: upstreamApiKey.value,
     });
 
     if (!forwardResult.ok) {
@@ -266,6 +277,20 @@ export async function handleOpenAIProxyRequest(input: {
       "upstream_request_failed",
       "OpenAI proxy request failed."
     );
+  }
+}
+
+function decryptUpstreamApiKey(
+  encryptedValue: string | null
+): { ok: true; value: string } | { ok: false } {
+  if (!encryptedValue) {
+    return { ok: false };
+  }
+
+  try {
+    return { ok: true, value: decrypt(encryptedValue) };
+  } catch {
+    return { ok: false };
   }
 }
 

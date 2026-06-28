@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { proxyKeyPolicies, proxyKeys } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import {
+  proxyBudgetReservations,
+  proxyKeyPolicies,
+  proxyKeys,
+  users,
+} from "@/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
+import { encrypt } from "@/lib/crypto";
+import * as openai from "@/lib/providers/openai";
 import {
   createProxyKeySecret,
   hashProxyKeySecret,
@@ -45,6 +52,13 @@ type PolicySummaryInput = {
 };
 
 type CreateProxyKeyInput = z.infer<typeof createProxyKeySchema>;
+type ProxyBudgetReservation = typeof proxyBudgetReservations.$inferSelect;
+type UpstreamCredentialInput = {
+  upstreamProjectId: string;
+  upstreamProviderKeyId: string;
+  upstreamKeyValue: string;
+  upstreamKeyHint: string;
+};
 type MaybePromise<T> = T | Promise<T>;
 type TransactionRunner = {
   transaction<T>(
@@ -53,12 +67,37 @@ type TransactionRunner = {
   ): MaybePromise<T>;
 };
 type ProxyKeyResponseInput = Parameters<typeof proxyKeyResponse>[0];
+type ThrottleSummary = {
+  throttled: boolean;
+  reason:
+    | "hourly_budget_exceeded"
+    | "daily_budget_exceeded"
+    | "monthly_budget_exceeded"
+    | null;
+};
+type BudgetWindowUsage = {
+  usedUsd: number;
+  limitUsd: number;
+  percent: number;
+  exceeded: boolean;
+};
+type BudgetUsage = {
+  hour: BudgetWindowUsage;
+  day: BudgetWindowUsage;
+  month: BudgetWindowUsage;
+};
+type BudgetState = {
+  throttle: ThrottleSummary;
+  budgetUsage: BudgetUsage;
+};
 type CreateProxyKeyResult = {
   newKey: ProxyKeyResponseInput;
   newPolicy: PolicySummaryInput;
 };
 
 class DuplicateProxyKeyNameError extends Error {}
+
+const MICRO_USD_PER_USD = 1_000_000;
 
 function isPromiseLike<T>(value: MaybePromise<T>): value is Promise<T> {
   return typeof (value as { then?: unknown }).then === "function";
@@ -85,6 +124,100 @@ function policySummary(policy: PolicySummaryInput) {
   };
 }
 
+function budgetState(
+  policy: Pick<
+    PolicySummaryInput,
+    "hourlyLimitUsd" | "dailyLimitUsd" | "monthlyLimitUsd"
+  >,
+  reservations: ProxyBudgetReservation[],
+  windows: ReturnType<typeof formatWindows>
+): BudgetState {
+  const budgetUsage = {
+    hour: budgetWindowUsage(
+      usedForWindow(reservations, "hourWindow", windows.hour),
+      policy.hourlyLimitUsd
+    ),
+    day: budgetWindowUsage(
+      usedForWindow(reservations, "dayWindow", windows.day),
+      policy.dailyLimitUsd
+    ),
+    month: budgetWindowUsage(
+      usedForWindow(reservations, "monthWindow", windows.month),
+      policy.monthlyLimitUsd
+    ),
+  };
+
+  if (budgetUsage.hour.exceeded) {
+    return {
+      throttle: { throttled: true, reason: "hourly_budget_exceeded" },
+      budgetUsage,
+    };
+  }
+  if (budgetUsage.day.exceeded) {
+    return {
+      throttle: { throttled: true, reason: "daily_budget_exceeded" },
+      budgetUsage,
+    };
+  }
+  if (budgetUsage.month.exceeded) {
+    return {
+      throttle: { throttled: true, reason: "monthly_budget_exceeded" },
+      budgetUsage,
+    };
+  }
+
+  return {
+    throttle: { throttled: false, reason: null },
+    budgetUsage,
+  };
+}
+
+function budgetWindowUsage(
+  usedMicroUsd: number,
+  limitUsd: number
+): BudgetWindowUsage {
+  const usedUsd = usedMicroUsd / MICRO_USD_PER_USD;
+  return {
+    usedUsd,
+    limitUsd,
+    percent: limitUsd > 0 ? (usedUsd / limitUsd) * 100 : 0,
+    exceeded: usedMicroUsd >= usdToMicroUsd(limitUsd),
+  };
+}
+
+function usedForWindow(
+  reservations: ProxyBudgetReservation[],
+  field: "hourWindow" | "dayWindow" | "monthWindow",
+  window: string
+): number {
+  return reservations
+    .filter((reservation) => reservation[field] === window)
+    .reduce((total, reservation) => total + billableMicroUsd(reservation), 0);
+}
+
+function billableMicroUsd(reservation: ProxyBudgetReservation): number {
+  if (reservation.reconciled === 1 && reservation.actualMicroUsd !== null) {
+    return reservation.actualMicroUsd;
+  }
+  return reservation.reservedMicroUsd;
+}
+
+function usdToMicroUsd(usd: number): number {
+  return Math.ceil(usd * MICRO_USD_PER_USD);
+}
+
+function formatWindows(now: Date) {
+  const year = String(now.getUTCFullYear());
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(now.getUTCDate()).padStart(2, "0");
+  const hour = String(now.getUTCHours()).padStart(2, "0");
+  return {
+    hour: `${year}${month}${day}${hour}`,
+    day: `${year}${month}${day}`,
+    month: `${year}${month}`,
+  };
+}
+
 function proxyKeyResponse(
   key: {
     id: string;
@@ -95,7 +228,15 @@ function proxyKeyResponse(
     revokedAt: string | null;
     lastUsedAt: string | null;
   },
-  policy: PolicySummaryInput
+  policy: PolicySummaryInput,
+  budget: BudgetState = {
+    throttle: { throttled: false, reason: null },
+    budgetUsage: {
+      hour: { usedUsd: 0, limitUsd: policy.hourlyLimitUsd, percent: 0, exceeded: false },
+      day: { usedUsd: 0, limitUsd: policy.dailyLimitUsd, percent: 0, exceeded: false },
+      month: { usedUsd: 0, limitUsd: policy.monthlyLimitUsd, percent: 0, exceeded: false },
+    },
+  }
 ) {
   return {
     id: key.id,
@@ -105,6 +246,8 @@ function proxyKeyResponse(
     createdAt: key.createdAt,
     revokedAt: key.revokedAt,
     lastUsedAt: key.lastUsedAt,
+    throttle: budget.throttle,
+    budgetUsage: budget.budgetUsage,
     policy: policySummary(policy),
   };
 }
@@ -113,7 +256,8 @@ function createProxyKeyInTransaction(
   tx: unknown,
   userId: string,
   data: CreateProxyKeyInput,
-  secret: string
+  secret: string,
+  upstream: UpstreamCredentialInput
 ): MaybePromise<CreateProxyKeyResult> {
   const txDb = tx as typeof db;
   const existingResult = txDb
@@ -140,6 +284,10 @@ function createProxyKeyInTransaction(
         name: data.name,
         keyHash: hashProxyKeySecret(secret),
         keyHint: keyHint(secret),
+        upstreamProjectId: upstream.upstreamProjectId,
+        upstreamProviderKeyId: upstream.upstreamProviderKeyId,
+        upstreamKeyValue: upstream.upstreamKeyValue,
+        upstreamKeyHint: upstream.upstreamKeyHint,
         status: "active",
       })
       .returning()
@@ -169,6 +317,48 @@ function createProxyKeyInTransaction(
       }));
     });
   });
+}
+
+async function getOrCreateOpenAIProject(
+  userId: string,
+  email: string
+): Promise<string> {
+  const user = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+
+  if (user?.openaiProjectId) {
+    return user.openaiProjectId;
+  }
+
+  const project = await openai.createProject(`aikeyhive-${email}`);
+  await db
+    .update(users)
+    .set({ openaiProjectId: project.id })
+    .where(eq(users.id, userId))
+    .run();
+
+  return project.id;
+}
+
+async function cleanupCreatedUpstreamCredential(input: {
+  projectId: string | null;
+  serviceAccountId: string | null;
+}): Promise<void> {
+  if (!input.projectId || !input.serviceAccountId) {
+    return;
+  }
+
+  try {
+    await openai.deleteServiceAccount(input.projectId, input.serviceAccountId);
+  } catch (error) {
+    console.error(
+      "OpenAI proxy upstream credential cleanup failed:",
+      error instanceof Error ? error.message : error
+    );
+  }
 }
 
 export async function GET() {
@@ -204,9 +394,23 @@ export async function GET() {
     .where(eq(proxyKeys.userId, session.user.id))
     .all();
 
+  const reservations = rows.length === 0
+    ? []
+    : await db
+        .select()
+        .from(proxyBudgetReservations)
+        .where(
+          inArray(
+            proxyBudgetReservations.proxyKeyId,
+            rows.map((row) => row.id)
+          )
+        )
+        .all();
+  const windows = formatWindows(new Date());
+
   return NextResponse.json({
-    data: rows.map((row) =>
-      proxyKeyResponse(row, {
+    data: rows.map((row) => {
+      const policy = {
         provider: row.provider,
         allowedModelsJson: row.allowedModelsJson,
         hourlyLimitUsd: row.hourlyLimitUsd,
@@ -216,8 +420,17 @@ export async function GET() {
         maxOutputTokens: row.maxOutputTokens,
         maxConcurrency: row.maxConcurrency,
         allowTools: row.allowTools,
-      })
-    ),
+      };
+      return proxyKeyResponse(
+        row,
+        policy,
+        budgetState(
+          policy,
+          reservations.filter((reservation) => reservation.proxyKeyId === row.id),
+          windows
+        )
+      );
+    }),
   });
 }
 
@@ -240,15 +453,55 @@ export async function POST(req: NextRequest) {
   }
 
   const secret = createProxyKeySecret();
+  const existingActive = await db
+    .select({ id: proxyKeys.id })
+    .from(proxyKeys)
+    .where(
+      and(
+        eq(proxyKeys.userId, session.user.id),
+        eq(proxyKeys.name, parsed.data.name),
+        eq(proxyKeys.status, "active")
+      )
+    )
+    .all();
+
+  if (existingActive.length > 0) {
+    return NextResponse.json(
+      { error: `An active proxy key with name "${parsed.data.name}" already exists` },
+      { status: 409 }
+    );
+  }
+
+  let createdProjectId: string | null = null;
+  let createdServiceAccountId: string | null = null;
 
   try {
+    const projectId = await getOrCreateOpenAIProject(
+      session.user.id,
+      session.user.email!
+    );
+    const serviceAccount = await openai.createServiceAccountKey(
+      projectId,
+      parsed.data.name
+    );
+    createdProjectId = projectId;
+    createdServiceAccountId = serviceAccount.id;
+
+    const upstream: UpstreamCredentialInput = {
+      upstreamProjectId: projectId,
+      upstreamProviderKeyId: serviceAccount.id,
+      upstreamKeyValue: encrypt(serviceAccount.api_key.value),
+      upstreamKeyHint: `sk-...${serviceAccount.api_key.value.slice(-4)}`,
+    };
+
     const { newKey, newPolicy } = await (db as unknown as TransactionRunner)
       .transaction(
         (tx) => createProxyKeyInTransaction(
           tx,
           session.user.id,
           parsed.data,
-          secret
+          secret,
+          upstream
         ),
         { behavior: "immediate" }
       );
@@ -261,6 +514,11 @@ export async function POST(req: NextRequest) {
     res.headers.set("Pragma", "no-cache");
     return res;
   } catch (error) {
+    await cleanupCreatedUpstreamCredential({
+      projectId: createdProjectId,
+      serviceAccountId: createdServiceAccountId,
+    });
+
     if (error instanceof DuplicateProxyKeyNameError) {
       return NextResponse.json(
         { error: `An active proxy key with name "${parsed.data.name}" already exists` },

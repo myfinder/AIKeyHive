@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { proxyKeys } from "@/db/schema";
+import * as openai from "@/lib/providers/openai";
 import { and, eq } from "drizzle-orm";
 
 export async function DELETE(
@@ -36,7 +37,19 @@ export async function DELETE(
       status: "revoked",
       revokedAt: new Date().toISOString(),
     })
-    .where(eq(proxyKeys.id, id));
+    .where(eq(proxyKeys.id, id))
+    .run();
+
+  if (key.upstreamProjectId && key.upstreamProviderKeyId) {
+    try {
+      await openai.deleteServiceAccount(
+        key.upstreamProjectId,
+        key.upstreamProviderKeyId
+      );
+    } catch (error) {
+      console.error("Failed to delete proxy upstream service account", error);
+    }
+  }
 
   return NextResponse.json({ success: true });
 }

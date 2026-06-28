@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestDb, seedUser } from "@/__tests__/db-helper";
-import { users } from "@/db/schema";
-import { eq } from "drizzle-orm";
 
 const testDbInstance = createTestDb();
 vi.mock("@/db", () => ({ db: testDbInstance.db }));

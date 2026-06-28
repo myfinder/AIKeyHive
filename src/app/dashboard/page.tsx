@@ -4,6 +4,7 @@ import { Nav } from "@/components/nav";
 import { KeyTable } from "@/components/key-table";
 import { KeyCreateDialog } from "@/components/key-create-dialog";
 import { ProxyKeyCreateDialog } from "@/components/proxy-key-create-dialog";
+import { ProxyKeyHowToUseDialog } from "@/components/proxy-key-how-to-use-dialog";
 import { ProxyKeyTable } from "@/components/proxy-key-table";
 import { useCosts } from "@/hooks/use-keys";
 import { useSession } from "next-auth/react";
@@ -16,6 +17,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  proxyKeysBadgeLabel,
+  proxyKeysDescription,
+} from "@/lib/proxy/dashboard-copy";
 
 function MonthlySummary() {
   const now = new Date();
@@ -87,13 +92,11 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               Proxy Keys
-              <Badge variant="secondary">Recommended</Badge>
+              <Badge variant="secondary">{proxyKeysBadgeLabel}</Badge>
             </CardTitle>
-            <CardDescription>
-              Virtual keys routed through AIKeyHive with model, budget, token,
-              and concurrency controls.
-            </CardDescription>
-            <CardAction>
+            <CardDescription>{proxyKeysDescription}</CardDescription>
+            <CardAction className="flex items-center gap-2">
+              <ProxyKeyHowToUseDialog />
               <ProxyKeyCreateDialog />
             </CardAction>
           </CardHeader>

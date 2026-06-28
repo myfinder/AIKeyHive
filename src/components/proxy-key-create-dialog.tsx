@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Copy } from "lucide-react";
+import { useId, useState } from "react";
+import { CircleHelp, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,6 +15,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useProxyKeys } from "@/hooks/use-keys";
+import {
+  defaultAllowedModelsCsv,
+  proxyKeyFormFieldHelp,
+} from "@/lib/proxy/model-policy";
+import { isHelpTooltipOpen } from "@/lib/ui/help-tooltip-state";
 
 type ProxyKeyForm = {
   name: string;
@@ -29,7 +34,7 @@ type ProxyKeyForm = {
 
 const defaultForm: ProxyKeyForm = {
   name: "",
-  allowedModels: "gpt-5-mini",
+  allowedModels: defaultAllowedModelsCsv,
   hourlyLimitUsd: "5",
   dailyLimitUsd: "20",
   monthlyLimitUsd: "100",
@@ -41,17 +46,100 @@ const defaultForm: ProxyKeyForm = {
 const numericFields: Array<{
   key: keyof Omit<ProxyKeyForm, "name" | "allowedModels">;
   label: string;
+  help: string;
   step?: string;
   min?: string;
   max?: string;
 }> = [
-  { key: "hourlyLimitUsd", label: "Hourly limit USD", step: "0.01", min: "0" },
-  { key: "dailyLimitUsd", label: "Daily limit USD", step: "0.01", min: "0" },
-  { key: "monthlyLimitUsd", label: "Monthly limit USD", step: "0.01", min: "0" },
-  { key: "maxRequestUsd", label: "Max request USD", step: "0.01", min: "0" },
-  { key: "maxOutputTokens", label: "Max output tokens", step: "1", min: "1" },
-  { key: "maxConcurrency", label: "Max concurrency", step: "1", min: "1", max: "10" },
+  {
+    key: "hourlyLimitUsd",
+    label: "Hourly limit USD",
+    help: proxyKeyFormFieldHelp.hourlyLimitUsd,
+    step: "0.01",
+    min: "0",
+  },
+  {
+    key: "dailyLimitUsd",
+    label: "Daily limit USD",
+    help: proxyKeyFormFieldHelp.dailyLimitUsd,
+    step: "0.01",
+    min: "0",
+  },
+  {
+    key: "monthlyLimitUsd",
+    label: "Monthly limit USD",
+    help: proxyKeyFormFieldHelp.monthlyLimitUsd,
+    step: "0.01",
+    min: "0",
+  },
+  {
+    key: "maxRequestUsd",
+    label: "Max request USD",
+    help: proxyKeyFormFieldHelp.maxRequestUsd,
+    step: "0.01",
+    min: "0",
+  },
+  {
+    key: "maxOutputTokens",
+    label: "Max output tokens",
+    help: proxyKeyFormFieldHelp.maxOutputTokens,
+    step: "1",
+    min: "1",
+  },
+  {
+    key: "maxConcurrency",
+    label: "Max concurrency",
+    help: proxyKeyFormFieldHelp.maxConcurrency,
+    step: "1",
+    min: "1",
+    max: "10",
+  },
 ];
+
+function HelpTooltip({ label, help }: { label: string; help: string }) {
+  const id = useId();
+  const [hovered, setHovered] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const open = isHelpTooltipOpen({ hovered, pinned });
+
+  return (
+    <span
+      className="relative inline-flex"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <button
+        type="button"
+        className="inline-flex size-5 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+        aria-label={`${label} details`}
+        aria-describedby={open ? id : undefined}
+        aria-expanded={open}
+        onClick={() => setPinned((current) => !current)}
+        onBlur={() => setPinned(false)}
+      >
+        <CircleHelp className="size-3.5" />
+      </button>
+      {open && (
+        <span
+          id={id}
+          role="tooltip"
+          className="absolute bottom-full left-1/2 z-[80] mb-2 w-72 max-w-[min(18rem,calc(100vw-2rem))] -translate-x-1/2 rounded-md bg-foreground px-3 py-2 text-xs leading-relaxed text-background shadow-md"
+        >
+          {help}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function FieldLabel({ label, help }: { label: string; help: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Label>{label}</Label>
+      <HelpTooltip label={label} help={help} />
+    </div>
+  );
+}
 
 function parsePositiveNumber(value: string) {
   const parsed = Number(value);
@@ -254,7 +342,7 @@ export function ProxyKeyCreateDialog() {
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Name</Label>
+                <FieldLabel label="Name" help={proxyKeyFormFieldHelp.name} />
                 <Input
                   placeholder="team-prod"
                   maxLength={100}
@@ -263,17 +351,24 @@ export function ProxyKeyCreateDialog() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Allowed models</Label>
+                <FieldLabel
+                  label="Allowed models"
+                  help={proxyKeyFormFieldHelp.allowedModels}
+                />
                 <Input
                   value={form.allowedModels}
                   onChange={(event) =>
                     updateField("allowedModels", event.target.value)
                   }
                 />
+                <p className="text-xs text-muted-foreground">
+                  Example:{" "}
+                  <span className="font-mono">{defaultAllowedModelsCsv}</span>
+                </p>
               </div>
               {numericFields.map((field) => (
                 <div key={field.key} className="space-y-2">
-                  <Label>{field.label}</Label>
+                  <FieldLabel label={field.label} help={field.help} />
                   <Input
                     type="number"
                     step={field.step}
