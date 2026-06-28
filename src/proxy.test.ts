@@ -39,7 +39,7 @@ vi.mock("next/server", () => {
 });
 
 import { getToken } from "next-auth/jwt";
-import { middleware } from "@/middleware";
+import { proxy } from "@/proxy";
 
 function createMockRequest(pathname: string, headers: Record<string, string> = {}) {
   return {
@@ -50,10 +50,10 @@ function createMockRequest(pathname: string, headers: Record<string, string> = {
     headers: {
       get: (key: string) => headers[key.toLowerCase()] || null,
     },
-  } as unknown as Parameters<typeof middleware>[0];
+  } as unknown as Parameters<typeof proxy>[0];
 }
 
-describe("middleware", () => {
+describe("proxy file", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.CRON_SECRET = "test-cron-secret";
@@ -62,34 +62,41 @@ describe("middleware", () => {
 
   describe("public routes", () => {
     it("allows / without auth", async () => {
-      const res = await middleware(createMockRequest("/"));
+      const res = await proxy(createMockRequest("/"));
       expect(res.status).toBe(200);
     });
 
     it("allows /api/auth paths", async () => {
-      const res = await middleware(createMockRequest("/api/auth/callback"));
+      const res = await proxy(createMockRequest("/api/auth/callback"));
       expect(res.status).toBe(200);
     });
 
+    it("allows /api/proxy paths to use route-level bearer auth", async () => {
+      vi.mocked(getToken).mockResolvedValue(null);
+      const res = await proxy(createMockRequest("/api/proxy/openai/v1/responses"));
+      expect(res.status).toBe(200);
+      expect(getToken).not.toHaveBeenCalled();
+    });
+
     it("allows /_next paths", async () => {
-      const res = await middleware(createMockRequest("/_next/static/chunk.js"));
+      const res = await proxy(createMockRequest("/_next/static/chunk.js"));
       expect(res.status).toBe(200);
     });
 
     it("allows /favicon.ico", async () => {
-      const res = await middleware(createMockRequest("/favicon.ico"));
+      const res = await proxy(createMockRequest("/favicon.ico"));
       expect(res.status).toBe(200);
     });
   });
 
   describe("cron routes", () => {
     it("rejects cron without authorization header", async () => {
-      const res = await middleware(createMockRequest("/api/cron/sync-costs"));
+      const res = await proxy(createMockRequest("/api/cron/sync-costs"));
       expect(res.status).toBe(401);
     });
 
     it("rejects cron with wrong secret", async () => {
-      const res = await middleware(
+      const res = await proxy(
         createMockRequest("/api/cron/sync-costs", {
           authorization: "Bearer wrong-secret",
         })
@@ -98,7 +105,7 @@ describe("middleware", () => {
     });
 
     it("accepts cron with correct secret", async () => {
-      const res = await middleware(
+      const res = await proxy(
         createMockRequest("/api/cron/sync-costs", {
           authorization: "Bearer test-cron-secret",
         })
@@ -108,7 +115,7 @@ describe("middleware", () => {
 
     it("rejects Bearer undefined when CRON_SECRET is unset", async () => {
       delete process.env.CRON_SECRET;
-      const res = await middleware(
+      const res = await proxy(
         createMockRequest("/api/cron/sync-costs", {
           authorization: "Bearer undefined",
         })
@@ -118,7 +125,7 @@ describe("middleware", () => {
 
     it("returns 500 when CRON_SECRET is not configured", async () => {
       delete process.env.CRON_SECRET;
-      const res = await middleware(createMockRequest("/api/cron/sync-costs"));
+      const res = await proxy(createMockRequest("/api/cron/sync-costs"));
       expect(res.status).toBe(500);
     });
   });
@@ -126,13 +133,13 @@ describe("middleware", () => {
   describe("authenticated routes", () => {
     it("returns 401 for API routes without token", async () => {
       vi.mocked(getToken).mockResolvedValue(null);
-      const res = await middleware(createMockRequest("/api/keys"));
+      const res = await proxy(createMockRequest("/api/keys"));
       expect(res.status).toBe(401);
     });
 
     it("redirects page routes without token to /", async () => {
       vi.mocked(getToken).mockResolvedValue(null);
-      const res = await middleware(createMockRequest("/dashboard"));
+      const res = await proxy(createMockRequest("/dashboard"));
       expect(res.status).toBe(307);
       expect((res as Record<string, unknown>).redirectUrl).toBe("/");
     });
@@ -142,7 +149,7 @@ describe("middleware", () => {
         id: "u1",
         role: "user",
       } as ReturnType<typeof getToken> extends Promise<infer T> ? T : never);
-      const res = await middleware(createMockRequest("/api/keys"));
+      const res = await proxy(createMockRequest("/api/keys"));
       expect(res.status).toBe(200);
     });
   });
@@ -153,7 +160,7 @@ describe("middleware", () => {
         id: "u1",
         role: "user",
       } as ReturnType<typeof getToken> extends Promise<infer T> ? T : never);
-      const res = await middleware(createMockRequest("/api/admin/users"));
+      const res = await proxy(createMockRequest("/api/admin/users"));
       expect(res.status).toBe(403);
     });
 
@@ -162,7 +169,7 @@ describe("middleware", () => {
         id: "u1",
         role: "admin",
       } as ReturnType<typeof getToken> extends Promise<infer T> ? T : never);
-      const res = await middleware(createMockRequest("/api/admin/users"));
+      const res = await proxy(createMockRequest("/api/admin/users"));
       expect(res.status).toBe(200);
     });
 
@@ -171,7 +178,7 @@ describe("middleware", () => {
         id: "u1",
         role: "user",
       } as ReturnType<typeof getToken> extends Promise<infer T> ? T : never);
-      const res = await middleware(createMockRequest("/costs"));
+      const res = await proxy(createMockRequest("/costs"));
       expect(res.status).toBe(307);
     });
 
@@ -180,7 +187,7 @@ describe("middleware", () => {
         id: "u1",
         role: "user",
       } as ReturnType<typeof getToken> extends Promise<infer T> ? T : never);
-      const res = await middleware(createMockRequest("/admin"));
+      const res = await proxy(createMockRequest("/admin"));
       expect((res as Record<string, unknown>).redirectUrl).toBe("/dashboard");
     });
   });
@@ -191,7 +198,7 @@ describe("middleware", () => {
         id: "u1",
         role: "user",
       } as ReturnType<typeof getToken> extends Promise<infer T> ? T : never);
-      const res = await middleware(createMockRequest("/API/ADMIN/users"));
+      const res = await proxy(createMockRequest("/API/ADMIN/users"));
       expect(res.status).toBe(403);
     });
 
@@ -200,20 +207,20 @@ describe("middleware", () => {
         id: "u1",
         role: "user",
       } as ReturnType<typeof getToken> extends Promise<infer T> ? T : never);
-      const res = await middleware(createMockRequest("/Admin"));
+      const res = await proxy(createMockRequest("/Admin"));
       expect(res.status).toBe(307);
     });
 
     it("blocks /API/Cron without secret header", async () => {
       // CRON_SECRET is set, so missing header returns 401
-      const res = await middleware(createMockRequest("/API/Cron/sync-costs"));
+      const res = await proxy(createMockRequest("/API/Cron/sync-costs"));
       expect(res.status).toBe(401);
     });
   });
 
   describe("timing-safe comparison", () => {
     it("rejects secrets of different length", async () => {
-      const res = await middleware(
+      const res = await proxy(
         createMockRequest("/api/cron/sync-costs", {
           authorization: "Bearer x",
         })
@@ -222,7 +229,7 @@ describe("middleware", () => {
     });
 
     it("rejects secrets that are similar but not identical", async () => {
-      const res = await middleware(
+      const res = await proxy(
         createMockRequest("/api/cron/sync-costs", {
           authorization: "Bearer test-cron-secrex",
         })

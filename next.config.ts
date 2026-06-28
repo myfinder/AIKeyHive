@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  turbopack: {
+    root: path.join(__dirname),
+  },
   async headers() {
     return [
       {
@@ -18,7 +22,7 @@ const nextConfig: NextConfig = {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
           },
-          // CSP is set dynamically in middleware.ts with per-request nonce
+          // CSP is set dynamically in proxy.ts.
         ],
       },
     ];

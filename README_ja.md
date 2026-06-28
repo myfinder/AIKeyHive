@@ -17,6 +17,7 @@
 - **マルチプロバイダーのキーライフサイクル管理** — OpenAI・Anthropic・Gemini の API キーの作成・一覧・削除
 - **コストダッシュボード** — プロバイダー API / BigQuery 経由で日次コストを同期し、チャート・プロバイダー/モデル別の内訳を表示（管理者のみ）
 - **予算管理** — 月額上限とアラート閾値を設定し、超過時にキーを自動削除
+- **OpenAI Proxy Mode** — OpenAI リクエスト用の仮想 `akp_...` キーを発行し、AIKeyHive 経由でキー単位の予算と同時実行数を制御
 - **Anthropic キープール** — 管理者がフルキー値を登録し、ユーザーにオンデマンドで割り当て（キーは作成時に一度だけ表示）
 - **ロールベースアクセス制御** — ユーザーと管理者の 2 ロール、それぞれ専用のダッシュボードと API 権限
 - **SSO 認証** — OIDC ベースのシングルサインオン、メールドメインのアクセス制限に対応
@@ -57,6 +58,8 @@ cp .env.example .env
 
 プロバイダー固有の変数（`OPENAI_ADMIN_KEY`、`ANTHROPIC_ADMIN_KEY`、`GOOGLE_PROJECT_ID` など）は、利用するプロバイダーのもののみ設定すれば十分です。
 
+Proxy Mode を利用する場合は、追加で `OPENAI_ADMIN_KEY` と `KEY_ENCRYPTION_KEY` が必要です。Proxy Key ごとに上流 OpenAI service account key を作成し、その上流キーをデータベースに暗号化して保存します。
+
 ### 3. OIDC プロバイダーの設定
 
 お使いの IdP（Google Workspace、Okta、Microsoft Entra ID 等）に AIKeyHive をクライアントとして登録し、以下を設定してください：
@@ -93,8 +96,10 @@ cp .env.example .env
 ### 4. データベースのセットアップ
 
 ```bash
-npx drizzle-kit push
+npm run db:migrate
 ```
+
+Vercel では `next build` の前に同じ migration コマンドが自動実行されます。
 
 ### 5. 開発サーバーの起動
 
@@ -111,12 +116,55 @@ docker build -t aikeyhive .
 docker run -p 3000:3000 --env-file .env aikeyhive
 ```
 
+## Proxy Mode 運用
+
+Proxy Key は、AIKeyHive 経由でルーティングされる仮想的な `akp_...` キーです。AIKeyHive が上流プロバイダーへ転送する前に予算予約・同時実行数制限・プロキシ利用記録を行えるため、予算管理を効かせたい用途では Proxy Key を標準にすることを推奨します。
+
+Direct Key は、プロバイダー純正の認証情報を要求するツール向けに引き続き利用できます。Direct Key のトラフィックは AIKeyHive プロキシを経由しないため、Proxy Mode ではコストガードできません。
+
+現在実装されているプロキシプロバイダー / エンドポイントは以下です：
+
+| プロバイダー | エンドポイント |
+|---|---|
+| OpenAI | `POST /api/proxy/openai/v1/responses` |
+| OpenAI | `POST /api/proxy/openai/v1/chat/completions` |
+
+Proxy Mode には以下の環境変数が必要です：
+
+| 変数名 | 用途 |
+|---|---|
+| `OPENAI_ADMIN_KEY` | Proxy Key が所有する OpenAI service account key の作成・失効 |
+| `KEY_ENCRYPTION_KEY` | AIKeyHive DB に保存する上流 OpenAI キー値の暗号化 |
+
+プロキシリクエストには、許可モデルごとに有効な `model_prices` 行も必要です。管理者は `/api/admin/model-prices` で価格カタログを管理し、`POST /api/admin/model-prices/seed` で `gpt-5-mini` と `gpt-5-nano` の OpenAI デフォルト価格を明示的に seed できます。
+
+保存済みの上流キーが存在しない / 復号できない場合、DB ベースの予算予約を作成できない場合、またはリクエストされたモデルの有効な価格がない場合、Proxy Mode は fail-closed でリクエストを拒否します。予算状態や価格が欠けている状態で enforcement が静かに迂回されることはありません。
+
+Proxy Key を使った Responses API リクエスト例：
+
+```bash
+curl https://<your-domain>/api/proxy/openai/v1/responses \
+  -H "Authorization: Bearer akp_your_proxy_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-5-mini",
+    "input": "Write a one sentence status update.",
+    "max_output_tokens": 64
+  }'
+```
+
+`max_output_tokens` は必須で、Proxy Key のポリシー内に収める必要があります。
+
+現在のプロキシ制限：リクエストはテキストのみとして検証されます。Responses の background mode は拒否されます。Chat Completions の `n` は `1` である必要があります。ダッシュボードから作成したキーでは tools は無効です。マルチモーダル、tools 利用、background workload をプロキシする場合は、明示的な対応を追加してください。
+
+Vercel / serverless でのデプロイ時は、Next route handler によるストリーミングがサポートされています。予算予約と同時実行数の状態はアプリケーション DB に保存されるため、本番ではローカルファイル DB ではなく共有された Turso / libSQL DB を使用してください。クライアントには Proxy Key だけを渡し、上流 OpenAI service account key はサーバー側で暗号化保存します。
+
 ## ページ構成
 
 | パス | 説明 | 権限 |
 |---|---|---|
 | `/` | ログイン画面 | 公開 |
-| `/dashboard` | コスト概要・キー一覧・キー作成 | ユーザー |
+| `/dashboard` | コスト概要・Direct / Proxy Key 一覧・キー作成 | ユーザー |
 | `/costs` | コスト推移チャート・プロバイダー/モデル別内訳 | 管理者 |
 | `/admin` | ユーザー管理 | 管理者 |
 | `/admin/budgets` | 予算管理 | 管理者 |
@@ -132,6 +180,16 @@ docker run -p 3000:3000 --env-file .env aikeyhive
 | `POST` | `/api/keys` | 新しいキーを作成 |
 | `DELETE` | `/api/keys/[id]` | キーを削除 |
 | `GET` | `/api/costs` | コストデータを取得 (`start`, `end`, `groupBy` パラメータ対応) |
+| `GET` | `/api/proxy-keys` | 自分の Proxy Key 一覧を取得 |
+| `POST` | `/api/proxy-keys` | Proxy Key を作成 |
+| `DELETE` | `/api/proxy-keys/[id]` | Proxy Key を失効 |
+
+### プロキシエンドポイント
+
+| メソッド | パス | 説明 |
+|---|---|---|
+| `POST` | `/api/proxy/openai/v1/responses` | OpenAI Responses API プロキシ。`Authorization: Bearer akp_...` で認証 |
+| `POST` | `/api/proxy/openai/v1/chat/completions` | OpenAI Chat Completions API プロキシ。`Authorization: Bearer akp_...` で認証 |
 
 ### 管理者向け
 
@@ -141,6 +199,8 @@ docker run -p 3000:3000 --env-file .env aikeyhive
 | `PATCH` | `/api/admin/users/[id]` | ユーザーロール変更 |
 | `GET/POST/DELETE` | `/api/admin/budgets` | 予算の CRUD |
 | `GET/POST` | `/api/admin/pool` | Anthropic キープール管理（フルキー値の登録） |
+| `GET/POST` | `/api/admin/model-prices` | モデル価格カタログ管理 |
+| `POST` | `/api/admin/model-prices/seed` | OpenAI デフォルトモデル価格 seed |
 
 ### Cron ジョブ
 
@@ -159,7 +219,8 @@ JWT セッション確立 (ロール情報含む)
     ▼
 ダッシュボード
   ├── キー作成
-  │   ├── OpenAI / Gemini → プロバイダー API で直接発行
+  │   ├── Proxy Key (akp_...) → AIKeyHive プロキシ → DB 予算予約 → OpenAI service account key
+  │   ├── OpenAI / Gemini Direct Key → プロバイダー API で直接発行
   │   └── Anthropic → 管理者が用意したプールから割当
   └── コスト確認
     │

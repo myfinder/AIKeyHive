@@ -72,13 +72,14 @@ export function KeyCreateDialog() {
   return (
     <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : handleClose())}>
       <DialogTrigger render={<Button />}>
-        Create API Key
+        Create Direct Key
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create API Key</DialogTitle>
+          <DialogTitle>Create Direct Key</DialogTitle>
           <DialogDescription>
-            Create a new API key for the selected provider.
+            Create provider credentials for tools that require direct provider
+            keys.
           </DialogDescription>
         </DialogHeader>
 
@@ -144,7 +145,7 @@ export function KeyCreateDialog() {
               disabled={!provider || !name || loading}
               className="w-full"
             >
-              {loading ? "Creating..." : "Create Key"}
+              {loading ? "Creating..." : "Create Direct Key"}
             </Button>
           </div>
         )}

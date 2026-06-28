@@ -37,7 +37,7 @@ export function KeyTable() {
   if (isLoading) {
     return (
       <div className="flex h-32 items-center justify-center text-muted-foreground">
-        Loading keys...
+        Loading direct keys...
       </div>
     );
   }
@@ -45,7 +45,8 @@ export function KeyTable() {
   if (keys.length === 0) {
     return (
       <div className="flex h-32 items-center justify-center text-muted-foreground">
-        No API keys yet. Create one to get started.
+        No direct keys yet. Create one for tools that require provider
+        credentials.
       </div>
     );
   }
