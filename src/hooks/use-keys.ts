@@ -2,6 +2,7 @@
 
 import useSWR from "swr";
 import type { ApiKey } from "@/db/schema";
+import type { ProxyModelCatalogItem } from "@/lib/proxy/model-catalog";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -112,6 +113,19 @@ export function useProxyKeys() {
     isError: !!error,
     error: error instanceof Error ? error.message : null,
     mutate,
+  };
+}
+
+export function useProxyModelCatalog() {
+  const { data, error, isLoading } = useSWR<{
+    data: ProxyModelCatalogItem[];
+  }>("/api/proxy-models", throwingJsonFetcher);
+
+  return {
+    models: data?.data || [],
+    isLoading,
+    isError: !!error,
+    error: error instanceof Error ? error.message : null,
   };
 }
 

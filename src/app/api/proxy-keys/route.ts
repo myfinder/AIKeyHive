@@ -5,6 +5,7 @@ import {
   proxyBudgetReservations,
   proxyKeyPolicies,
   proxyKeys,
+  modelPrices,
   users,
 } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
@@ -453,6 +454,33 @@ export async function POST(req: NextRequest) {
   }
 
   const secret = createProxyKeySecret();
+  const requestedModels = [...new Set(parsed.data.allowedModels)];
+  const pricedModels = await db
+    .select({ model: modelPrices.model })
+    .from(modelPrices)
+    .where(
+      and(
+        eq(modelPrices.provider, "openai"),
+        eq(modelPrices.active, 1),
+        inArray(modelPrices.model, requestedModels)
+      )
+    )
+    .all();
+  const pricedModelSet = new Set(pricedModels.map((row) => row.model));
+  const missingModels = requestedModels.filter(
+    (model) => !pricedModelSet.has(model)
+  );
+
+  if (missingModels.length > 0) {
+    return NextResponse.json(
+      {
+        error: "Allowed models must have active OpenAI prices",
+        missingModels,
+      },
+      { status: 400 }
+    );
+  }
+
   const existingActive = await db
     .select({ id: proxyKeys.id })
     .from(proxyKeys)

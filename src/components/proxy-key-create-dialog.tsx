@@ -1,7 +1,7 @@
 "use client";
 
-import { useId, useState } from "react";
-import { CircleHelp, Copy } from "lucide-react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { ChevronDown, CircleHelp, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,16 +14,21 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { useProxyKeys } from "@/hooks/use-keys";
+import { useProxyKeys, useProxyModelCatalog } from "@/hooks/use-keys";
 import {
   defaultAllowedModelsCsv,
   proxyKeyFormFieldHelp,
 } from "@/lib/proxy/model-policy";
 import { isHelpTooltipOpen } from "@/lib/ui/help-tooltip-state";
+import {
+  filterProxyModels,
+  formatModelPriceLine,
+  selectedModelsSummary,
+} from "@/lib/proxy/model-catalog";
 
 type ProxyKeyForm = {
   name: string;
-  allowedModels: string;
+  allowedModels: string[];
   hourlyLimitUsd: string;
   dailyLimitUsd: string;
   monthlyLimitUsd: string;
@@ -32,9 +37,14 @@ type ProxyKeyForm = {
   maxConcurrency: string;
 };
 
+const defaultAllowedModels = defaultAllowedModelsCsv
+  .split(",")
+  .map((model) => model.trim())
+  .filter(Boolean);
+
 const defaultForm: ProxyKeyForm = {
   name: "",
-  allowedModels: defaultAllowedModelsCsv,
+  allowedModels: [],
   hourlyLimitUsd: "5",
   dailyLimitUsd: "20",
   monthlyLimitUsd: "100",
@@ -177,10 +187,74 @@ export function ProxyKeyCreateDialog() {
   const [form, setForm] = useState<ProxyKeyForm>(defaultForm);
   const [loading, setLoading] = useState(false);
   const [createdKey, setCreatedKey] = useState<string | null>(null);
+  const [initializedModelSelection, setInitializedModelSelection] =
+    useState(false);
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const [modelSearch, setModelSearch] = useState("");
   const { mutate } = useProxyKeys();
+  const {
+    models: proxyModels,
+    isLoading: proxyModelsLoading,
+    isError: proxyModelsError,
+  } = useProxyModelCatalog();
 
-  function updateField(key: keyof ProxyKeyForm, value: string) {
+  const availableModelSet = useMemo(
+    () => new Set(proxyModels.map((model) => model.model)),
+    [proxyModels]
+  );
+  const filteredProxyModels = useMemo(
+    () => filterProxyModels(proxyModels, modelSearch),
+    [modelSearch, proxyModels]
+  );
+  const allowedModelsSummary = selectedModelsSummary(form.allowedModels);
+
+  useEffect(() => {
+    if (!open || initializedModelSelection || proxyModels.length === 0) {
+      return;
+    }
+
+    setForm((current) => {
+      const currentAvailableSelection = current.allowedModels.filter((model) =>
+        availableModelSet.has(model)
+      );
+      const defaultAvailableSelection = defaultAllowedModels.filter((model) =>
+        availableModelSet.has(model)
+      );
+
+      return {
+        ...current,
+        allowedModels:
+          currentAvailableSelection.length > 0
+            ? currentAvailableSelection
+            : defaultAvailableSelection,
+      };
+    });
+    setInitializedModelSelection(true);
+  }, [availableModelSet, initializedModelSelection, open, proxyModels.length]);
+
+  function updateField(
+    key: keyof Omit<ProxyKeyForm, "allowedModels">,
+    value: string
+  ) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function toggleAllowedModel(model: string, checked: boolean) {
+    setForm((current) => {
+      const selected = new Set(current.allowedModels);
+      if (checked) {
+        selected.add(model);
+      } else {
+        selected.delete(model);
+      }
+
+      return {
+        ...current,
+        allowedModels: proxyModels
+          .map((item) => item.model)
+          .filter((itemModel) => selected.has(itemModel)),
+      };
+    });
   }
 
   function buildPayload() {
@@ -194,12 +268,9 @@ export function ProxyKeyCreateDialog() {
       );
     }
 
-    const allowedModels = form.allowedModels
-      .split(",")
-      .map((model) => model.trim())
-      .filter(Boolean);
+    const allowedModels = form.allowedModels.filter(Boolean);
     if (allowedModels.length === 0) {
-      throw new Error("Add at least one allowed model");
+      throw new Error("Select at least one allowed model");
     }
 
     const hourlyLimitUsd = parsePositiveNumber(form.hourlyLimitUsd);
@@ -284,6 +355,9 @@ export function ProxyKeyCreateDialog() {
     setOpen(false);
     setCreatedKey(null);
     setForm(defaultForm);
+    setInitializedModelSelection(false);
+    setModelDropdownOpen(false);
+    setModelSearch("");
   }
 
   return (
@@ -355,16 +429,127 @@ export function ProxyKeyCreateDialog() {
                   label="Allowed models"
                   help={proxyKeyFormFieldHelp.allowedModels}
                 />
-                <Input
-                  value={form.allowedModels}
-                  onChange={(event) =>
-                    updateField("allowedModels", event.target.value)
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Example:{" "}
-                  <span className="font-mono">{defaultAllowedModelsCsv}</span>
-                </p>
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-sm focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-expanded={modelDropdownOpen}
+                    disabled={
+                      proxyModelsLoading ||
+                      proxyModelsError ||
+                      proxyModels.length === 0
+                    }
+                    onClick={() =>
+                      setModelDropdownOpen((current) => !current)
+                    }
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="shrink-0 font-medium">
+                        {form.allowedModels.length} selected
+                      </span>
+                      <span className="truncate font-mono text-xs text-muted-foreground">
+                        {allowedModelsSummary}
+                      </span>
+                    </span>
+                    <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+                  </button>
+
+                  {modelDropdownOpen && (
+                    <div className="absolute top-10 right-0 left-0 z-[90] overflow-hidden rounded-md border bg-background shadow-lg">
+                      <div className="border-b p-2">
+                        <Input
+                          placeholder="Search model..."
+                          value={modelSearch}
+                          onChange={(event) =>
+                            setModelSearch(event.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="max-h-72 overflow-y-auto">
+                        {filteredProxyModels.length === 0 ? (
+                          <p className="px-3 py-2 text-sm text-muted-foreground">
+                            No matching models.
+                          </p>
+                        ) : (
+                          filteredProxyModels.map((model) => (
+                            <label
+                              key={model.model}
+                              className="grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-center gap-3 border-b px-3 py-2 last:border-b-0 hover:bg-muted/60"
+                            >
+                              <input
+                                type="checkbox"
+                                className="size-4 accent-primary"
+                                checked={form.allowedModels.includes(
+                                  model.model
+                                )}
+                                onChange={(event) =>
+                                  toggleAllowedModel(
+                                    model.model,
+                                    event.target.checked
+                                  )
+                                }
+                              />
+                              <span className="min-w-0">
+                                <span className="block truncate font-mono text-sm">
+                                  {model.model}
+                                </span>
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  {formatModelPriceLine(model)}
+                                </span>
+                              </span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between gap-2 border-t p-2">
+                        <span className="text-xs text-muted-foreground">
+                          Showing models with active OpenAI prices.
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => setModelDropdownOpen(false)}
+                        >
+                          Apply
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {proxyModelsLoading && (
+                  <p className="text-xs text-muted-foreground">
+                    Loading models...
+                  </p>
+                )}
+                {proxyModelsError && (
+                  <p className="text-xs text-destructive">
+                    Failed to load priced models.
+                  </p>
+                )}
+                {!proxyModelsLoading &&
+                  !proxyModelsError &&
+                  proxyModels.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      No active priced models are available.
+                    </p>
+                  )}
+                {form.allowedModels.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {form.allowedModels.map((model) => (
+                      <button
+                        key={model}
+                        type="button"
+                        className="inline-flex min-h-6 max-w-full items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-xs hover:bg-muted"
+                        onClick={() => toggleAllowedModel(model, false)}
+                      >
+                        <span className="truncate">{model}</span>
+                        <span className="font-sans text-muted-foreground">
+                          x
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               {numericFields.map((field) => (
                 <div key={field.key} className="space-y-2">
@@ -387,8 +572,11 @@ export function ProxyKeyCreateDialog() {
               onClick={handleCreate}
               disabled={
                 loading ||
+                proxyModelsLoading ||
+                proxyModelsError ||
+                proxyModels.length === 0 ||
                 !form.name.trim() ||
-                !form.allowedModels.trim()
+                form.allowedModels.length === 0
               }
               className="w-full"
             >

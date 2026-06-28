@@ -9,6 +9,29 @@ import {
 
 const testDbInstance = createTestDb();
 
+const expectedOpenAiStandardTextModels = [
+  "chat-latest",
+  "gpt-4.1",
+  "gpt-4.1-mini",
+  "gpt-4o-mini",
+  "gpt-5",
+  "gpt-5-mini",
+  "gpt-5-nano",
+  "gpt-5-pro",
+  "gpt-5.1",
+  "gpt-5.2",
+  "gpt-5.2-pro",
+  "gpt-5.3-codex",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.4-nano",
+  "gpt-5.4-pro",
+  "gpt-5.5",
+  "gpt-5.5-pro",
+  "o3",
+  "o3-pro",
+];
+
 describe("seedDefaultModelPrices", () => {
   beforeEach(() => {
     testDbInstance.sqlite.exec("DELETE FROM model_prices");
@@ -23,7 +46,10 @@ describe("seedDefaultModelPrices", () => {
       .orderBy(modelPrices.model)
       .all();
 
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(20);
+    expect(rows.map((row) => row.model)).toEqual(
+      expectedOpenAiStandardTextModels
+    );
     const expectedPrices = [...defaultModelPrices].sort((a, b) =>
       a.model.localeCompare(b.model)
     );
@@ -83,12 +109,13 @@ describe("seedDefaultModelPrices", () => {
 
     const rows = testDbInstance.db.select().from(modelPrices).all();
 
-    expect(rows).toHaveLength(2);
-    expect(rows.filter((row) => row.active === 1)).toHaveLength(2);
-    expect(rows.map((row) => `${row.provider}:${row.model}`).sort()).toEqual([
-      "openai:gpt-5-mini",
-      "openai:gpt-5-nano",
-    ]);
+    expect(rows).toHaveLength(20);
+    expect(rows.filter((row) => row.active === 1)).toHaveLength(
+      expectedOpenAiStandardTextModels.length
+    );
+    expect(rows.map((row) => `${row.provider}:${row.model}`).sort()).toEqual(
+      expectedOpenAiStandardTextModels.map((model) => `openai:${model}`)
+    );
   });
 
   it("inserts an active default when only inactive rows exist for the model", async () => {

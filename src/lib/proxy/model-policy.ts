@@ -3,7 +3,8 @@ export const defaultAllowedModelsCsv =
 
 export const proxyKeyFormFieldHelp = {
   name: "Name is required. Use 1-100 characters: letters, numbers, hyphens, or underscores. Example: team-prod.",
-  allowedModels: `Allowed models are required. Use comma-separated model IDs this key can call. Example: ${defaultAllowedModelsCsv}. Each model also needs an active price in Admin Model Prices.`,
+  allowedModels:
+    "Allowed models are required. Select one or more models this key can call. The list only includes models with an active OpenAI price in Admin Model Prices.",
   hourlyLimitUsd:
     "Required positive USD value. This is the hourly budget window, and hourly <= daily must be true.",
   dailyLimitUsd:

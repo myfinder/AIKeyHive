@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestDb, seedUser } from "@/__tests__/db-helper";
 import {
+  modelPrices,
   proxyBudgetReservations,
   proxyKeyPolicies,
   proxyKeys,
@@ -52,13 +53,27 @@ function postRequest(body: unknown) {
   });
 }
 
+function seedActiveModelPrice(model = "gpt-4.1-mini") {
+  testDbInstance.db.insert(modelPrices).values({
+    id: `price-${model}`,
+    provider: "openai",
+    model,
+    inputUsdPer1m: 0.4,
+    cachedInputUsdPer1m: 0.1,
+    outputUsdPer1m: 1.6,
+    active: 1,
+  }).run();
+}
+
 describe("proxy keys API", () => {
   beforeEach(() => {
     testDbInstance.sqlite.exec("DROP TRIGGER IF EXISTS fail_proxy_policy_insert");
+    testDbInstance.sqlite.exec("DELETE FROM model_prices");
     testDbInstance.sqlite.exec("DELETE FROM proxy_budget_reservations");
     testDbInstance.sqlite.exec("DELETE FROM proxy_key_policies");
     testDbInstance.sqlite.exec("DELETE FROM proxy_keys");
     testDbInstance.sqlite.exec("DELETE FROM users");
+    seedActiveModelPrice();
     vi.clearAllMocks();
   });
 
@@ -483,6 +498,35 @@ describe("proxy keys API", () => {
 
       expect(res.status).toBe(400);
       expect(body).not.toHaveProperty("details");
+    });
+
+    it("rejects allowed models without an active OpenAI price before creating upstream keys", async () => {
+      seedUser(testDbInstance.db, {
+        id: "u1",
+        oidcSub: "sub1",
+        email: "u1@test.com",
+      });
+
+      vi.mocked(auth).mockResolvedValue({
+        user: { id: "u1", email: "u1@test.com", role: "user" },
+        expires: "",
+      });
+
+      const { POST } = await import("@/app/api/proxy-keys/route");
+      const res = await POST(postRequest({
+        ...validBody,
+        allowedModels: ["gpt-4.1-mini", "not-priced"],
+      }) as never);
+      const body = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(body).toEqual({
+        error: "Allowed models must have active OpenAI prices",
+        missingModels: ["not-priced"],
+      });
+      expect(openai.createProject).not.toHaveBeenCalled();
+      expect(openai.createServiceAccountKey).not.toHaveBeenCalled();
+      expect(testDbInstance.db.select().from(proxyKeys).all()).toHaveLength(0);
     });
   });
 });

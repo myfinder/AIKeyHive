@@ -7,6 +7,29 @@ vi.mock("@/db", () => ({ db: testDbInstance.db }));
 
 import { auth } from "@/auth";
 
+const defaultOpenAiSeedModels = [
+  "chat-latest",
+  "gpt-4.1",
+  "gpt-4.1-mini",
+  "gpt-4o-mini",
+  "gpt-5",
+  "gpt-5-mini",
+  "gpt-5-nano",
+  "gpt-5-pro",
+  "gpt-5.1",
+  "gpt-5.2",
+  "gpt-5.2-pro",
+  "gpt-5.3-codex",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.4-nano",
+  "gpt-5.4-pro",
+  "gpt-5.5",
+  "gpt-5.5-pro",
+  "o3",
+  "o3-pro",
+].sort();
+
 function adminSession() {
   vi.mocked(auth).mockResolvedValue({
     user: { id: "admin-1", email: "admin@test.com", role: "admin" },
@@ -146,17 +169,18 @@ describe("admin model prices API", () => {
       const firstBody = await first.json();
       const second = await POST();
       const secondBody = await second.json();
-
       expect(first.status).toBe(200);
-      expect(firstBody.data).toHaveLength(2);
+      expect(firstBody.data).toHaveLength(defaultOpenAiSeedModels.length);
       expect(firstBody.data.map((row: { model: string }) => row.model).sort())
-        .toEqual(["gpt-5-mini", "gpt-5-nano"]);
+        .toEqual(defaultOpenAiSeedModels);
       expect(second.status).toBe(200);
       expect(secondBody.data).toEqual([]);
 
       const stored = testDbInstance.db.select().from(modelPrices).all();
-      expect(stored).toHaveLength(2);
-      expect(stored.filter((row) => row.active === 1)).toHaveLength(2);
+      expect(stored).toHaveLength(defaultOpenAiSeedModels.length);
+      expect(stored.filter((row) => row.active === 1)).toHaveLength(
+        defaultOpenAiSeedModels.length
+      );
     });
   });
 
