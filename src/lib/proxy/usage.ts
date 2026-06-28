@@ -39,7 +39,7 @@ export async function createReservedUsageEvent(input: {
     requestId: input.requestId,
     estimatedCostUsd: input.estimatedCostUsd,
     reservedCostUsd: input.reservedCostUsd,
-  });
+  }).run();
   await updateProxyKeyLastUsed(input.proxyKeyId, now);
 
   return usageEventId;
@@ -162,5 +162,6 @@ async function updateProxyKeyLastUsed(
   await db
     .update(proxyKeys)
     .set({ lastUsedAt })
-    .where(eq(proxyKeys.id, proxyKeyId));
+    .where(eq(proxyKeys.id, proxyKeyId))
+    .run();
 }
