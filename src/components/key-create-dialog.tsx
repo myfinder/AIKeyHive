@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,19 +27,35 @@ export function KeyCreateDialog() {
   const [open, setOpen] = useState(false);
   const [provider, setProvider] = useState<string>("");
   const [name, setName] = useState("");
+  const [expiresInDays, setExpiresInDays] = useState("30");
+  const [noExpiration, setNoExpiration] = useState(false);
   const [loading, setLoading] = useState(false);
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const { mutate } = useKeys();
 
+  const expirationDays = Number(expiresInDays);
+  const expirationInvalid =
+    !Number.isInteger(expirationDays) ||
+    expirationDays < 1 ||
+    expirationDays > 366;
+  const canCreate =
+    Boolean(provider) &&
+    Boolean(name) &&
+    (noExpiration || !expirationInvalid);
+
   async function handleCreate() {
-    if (!provider || !name) return;
+    if (!canCreate) return;
     setLoading(true);
 
     try {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, name }),
+        body: JSON.stringify(
+          noExpiration
+            ? { provider, name, noExpiration: true }
+            : { provider, name, expiresInDays: expirationDays }
+        ),
       });
       const data = await res.json();
 
@@ -67,6 +84,8 @@ export function KeyCreateDialog() {
     setCreatedKey(null);
     setProvider("");
     setName("");
+    setExpiresInDays("30");
+    setNoExpiration(false);
   }
 
   return (
@@ -100,7 +119,7 @@ export function KeyCreateDialog() {
                     toast.success("Copied to clipboard");
                   }}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                  <Copy className="size-3.5" />
                   Copy
                 </Button>
               </div>
@@ -134,15 +153,52 @@ export function KeyCreateDialog() {
               />
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="direct-key-expires-in-days">
+                Expiration
+              </Label>
+              <Input
+                id="direct-key-expires-in-days"
+                type="number"
+                min={1}
+                max={366}
+                step={1}
+                value={expiresInDays}
+                disabled={noExpiration}
+                aria-invalid={!noExpiration && expirationInvalid}
+                onChange={(e) => setExpiresInDays(e.target.value)}
+              />
+              <p className="text-sm text-muted-foreground">
+                Expiration must be between 1 and 366 days. The default is 30
+                days.
+              </p>
+            </div>
+
             {provider === "anthropic" && (
               <p className="text-sm text-muted-foreground">
                 Anthropic keys are assigned from the pre-provisioned pool.
               </p>
             )}
 
+            <label className="grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-md border p-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 accent-primary"
+                checked={noExpiration}
+                onChange={(e) => setNoExpiration(e.target.checked)}
+              />
+              <span className="space-y-1">
+                <span className="block font-medium">No expiration</span>
+                <span className="block text-muted-foreground">
+                  This Direct Key will not be automatically disabled by
+                  AIKeyHive. Revoke it manually when it is no longer needed.
+                </span>
+              </span>
+            </label>
+
             <Button
               onClick={handleCreate}
-              disabled={!provider || !name || loading}
+              disabled={!canCreate || loading}
               className="w-full"
             >
               {loading ? "Creating..." : "Create Direct Key"}

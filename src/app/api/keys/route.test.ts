@@ -34,6 +34,10 @@ import { auth } from "@/auth";
 import * as openai from "@/lib/providers/openai";
 import * as anthropic from "@/lib/providers/anthropic";
 
+const validDirectKeyPayload = {
+  expiresInDays: 30,
+};
+
 describe("keys API", () => {
   beforeEach(() => {
     testDbInstance.sqlite.exec("DELETE FROM api_keys");
@@ -106,6 +110,36 @@ describe("keys API", () => {
 
       expect(body.data[0]).not.toHaveProperty("userId");
       expect(body.data[0]).not.toHaveProperty("providerKeyId");
+    });
+
+    it("returns expiration and lifecycle status", async () => {
+      seedUser(testDbInstance.db, {
+        id: "u1",
+        oidcSub: "sub1",
+        email: "u1@test.com",
+      });
+      testDbInstance.db.insert(apiKeys).values({
+        id: "k1",
+        userId: "u1",
+        provider: "openai",
+        name: "key1",
+        keyHint: "sk-...1234",
+        expiresAt: "2026-07-30T00:00:00.000Z",
+        status: "active",
+      }).run();
+
+      vi.mocked(auth).mockResolvedValue({
+        user: { id: "u1", email: "u1@test.com", role: "user" },
+        expires: "",
+      });
+
+      const { GET } = await import("@/app/api/keys/route");
+      const res = await GET();
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body.data[0].expiresAt).toBe("2026-07-30T00:00:00.000Z");
+      expect(body.data[0].status).toBe("active");
     });
 
     it("returns lastUsedAt from provider lookups", async () => {
@@ -192,7 +226,7 @@ describe("keys API", () => {
       const { POST } = await import("@/app/api/keys/route");
       const req = new Request("http://localhost/api/keys", {
         method: "POST",
-        body: JSON.stringify({ provider: "openai", name: "test" }),
+        body: JSON.stringify({ provider: "openai", name: "test", ...validDirectKeyPayload }),
         headers: { "Content-Type": "application/json" },
       });
       const res = await POST(req as never);
@@ -208,7 +242,7 @@ describe("keys API", () => {
       const { POST } = await import("@/app/api/keys/route");
       const req = new Request("http://localhost/api/keys", {
         method: "POST",
-        body: JSON.stringify({ provider: "invalid", name: "" }),
+        body: JSON.stringify({ provider: "invalid", name: "", ...validDirectKeyPayload }),
         headers: { "Content-Type": "application/json" },
       });
       const res = await POST(req as never);
@@ -217,6 +251,98 @@ describe("keys API", () => {
       expect(res.status).toBe(400);
       // Should NOT leak validation details
       expect(body).not.toHaveProperty("details");
+    });
+
+    it("requires either a bounded expiration period or explicit no-expiration mode", async () => {
+      seedUser(testDbInstance.db, {
+        id: "u1",
+        oidcSub: "sub1",
+        email: "u1@test.com",
+        openaiProjectId: "proj-123",
+      });
+
+      vi.mocked(auth).mockResolvedValue({
+        user: { id: "u1", email: "u1@test.com", role: "user" },
+        expires: "",
+      });
+
+      const { POST } = await import("@/app/api/keys/route");
+      const req = new Request("http://localhost/api/keys", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "openai",
+          name: "missing-expiration",
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
+      const res = await POST(req as never);
+
+      expect(res.status).toBe(400);
+      expect(openai.createServiceAccountKey).not.toHaveBeenCalled();
+    });
+
+    it("allows no-expiration keys only when explicitly requested", async () => {
+      seedUser(testDbInstance.db, {
+        id: "u1",
+        oidcSub: "sub1",
+        email: "u1@test.com",
+        openaiProjectId: "proj-123",
+      });
+
+      vi.mocked(auth).mockResolvedValue({
+        user: { id: "u1", email: "u1@test.com", role: "user" },
+        expires: "",
+      });
+
+      const { POST } = await import("@/app/api/keys/route");
+      const req = new Request("http://localhost/api/keys", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "openai",
+          name: "no-expiration-key",
+          noExpiration: true,
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
+      const res = await POST(req as never);
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body.data.status).toBe("active");
+      expect(body.data.expiresAt).toBeNull();
+      expect(openai.createServiceAccountKey).toHaveBeenCalled();
+    });
+
+    it("requires an expiration period between 1 and 366 days", async () => {
+      seedUser(testDbInstance.db, {
+        id: "u1",
+        oidcSub: "sub1",
+        email: "u1@test.com",
+        openaiProjectId: "proj-123",
+      });
+
+      vi.mocked(auth).mockResolvedValue({
+        user: { id: "u1", email: "u1@test.com", role: "user" },
+        expires: "",
+      });
+
+      const { POST } = await import("@/app/api/keys/route");
+
+      for (const expiresInDays of [0, 367]) {
+        const req = new Request("http://localhost/api/keys", {
+          method: "POST",
+          body: JSON.stringify({
+            provider: "openai",
+            name: `key-${expiresInDays}`,
+            expiresInDays,
+          }),
+          headers: { "Content-Type": "application/json" },
+        });
+        const res = await POST(req as never);
+        expect(res.status).toBe(400);
+      }
+
+      expect(openai.createServiceAccountKey).not.toHaveBeenCalled();
     });
 
     it("prevents duplicate key names for same provider", async () => {
@@ -240,11 +366,55 @@ describe("keys API", () => {
       const { POST } = await import("@/app/api/keys/route");
       const req = new Request("http://localhost/api/keys", {
         method: "POST",
-        body: JSON.stringify({ provider: "openai", name: "my-key" }),
+        body: JSON.stringify({ provider: "openai", name: "my-key", ...validDirectKeyPayload }),
         headers: { "Content-Type": "application/json" },
       });
       const res = await POST(req as never);
       expect(res.status).toBe(409);
+    });
+
+    it("stores expiration metadata for newly created keys", async () => {
+      const before = Date.now();
+      seedUser(testDbInstance.db, {
+        id: "u1",
+        oidcSub: "sub1",
+        email: "u1@test.com",
+        openaiProjectId: "proj-123",
+      });
+
+      vi.mocked(auth).mockResolvedValue({
+        user: { id: "u1", email: "u1@test.com", role: "user" },
+        expires: "",
+      });
+
+      const { POST } = await import("@/app/api/keys/route");
+      const req = new Request("http://localhost/api/keys", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "openai",
+          name: "new-key",
+          ...validDirectKeyPayload,
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
+      const res = await POST(req as never);
+      const body = await res.json();
+      const after = Date.now();
+
+      expect(res.status).toBe(200);
+      expect(body.data.status).toBe("active");
+      expect(body.data.expiresAt).toBeTruthy();
+      const expiresAt = Date.parse(body.data.expiresAt);
+      expect(expiresAt).toBeGreaterThanOrEqual(before + 29 * 24 * 60 * 60 * 1000);
+      expect(expiresAt).toBeLessThanOrEqual(after + 31 * 24 * 60 * 60 * 1000);
+
+      const saved = testDbInstance.db
+        .select()
+        .from(apiKeys)
+        .where(eq(apiKeys.name, "new-key"))
+        .get();
+      expect(saved?.status).toBe("active");
+      expect(saved?.expiresAt).toBe(body.data.expiresAt);
     });
 
     it("assigns Anthropic key from pool atomically", async () => {
@@ -270,7 +440,7 @@ describe("keys API", () => {
       const { POST } = await import("@/app/api/keys/route");
       const req = new Request("http://localhost/api/keys", {
         method: "POST",
-        body: JSON.stringify({ provider: "anthropic", name: "my-ant-key" }),
+        body: JSON.stringify({ provider: "anthropic", name: "my-ant-key", ...validDirectKeyPayload }),
         headers: { "Content-Type": "application/json" },
       });
       const res = await POST(req as never);
@@ -303,7 +473,7 @@ describe("keys API", () => {
       const { POST } = await import("@/app/api/keys/route");
       const req = new Request("http://localhost/api/keys", {
         method: "POST",
-        body: JSON.stringify({ provider: "anthropic", name: "my-ant-key" }),
+        body: JSON.stringify({ provider: "anthropic", name: "my-ant-key", ...validDirectKeyPayload }),
         headers: { "Content-Type": "application/json" },
       });
       const res = await POST(req as never);
@@ -326,7 +496,7 @@ describe("keys API", () => {
       const { POST } = await import("@/app/api/keys/route");
       const req = new Request("http://localhost/api/keys", {
         method: "POST",
-        body: JSON.stringify({ provider: "openai", name: "new-key" }),
+        body: JSON.stringify({ provider: "openai", name: "new-key", ...validDirectKeyPayload }),
         headers: { "Content-Type": "application/json" },
       });
       const res = await POST(req as never);
@@ -335,6 +505,8 @@ describe("keys API", () => {
       expect(res.status).toBe(200);
       expect(body.data).not.toHaveProperty("providerKeyId");
       expect(body.data).not.toHaveProperty("userId");
+      expect(body.data).toHaveProperty("expiresAt");
+      expect(body.data).toHaveProperty("status", "active");
       expect(body.key).toBeDefined();
     });
   });

@@ -50,6 +50,13 @@
       "when": 1782620746235,
       "tag": "0006_premium_genesis",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1782813226160,
+      "tag": "0007_cold_jack_power",
+      "breakpoints": true
     }
   ]
 }

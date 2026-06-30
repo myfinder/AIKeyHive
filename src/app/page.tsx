@@ -1,8 +1,8 @@
 "use client";
 
-import { useSession, signIn } from "next-auth/react";
+import { useSession, signIn, getProviders } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,9 +10,13 @@ import {
   CardHeader,
 } from "@/components/ui/card";
 
+type LoginProvider = "okta" | "dev";
+
 export default function LoginPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const [loginProvider, setLoginProvider] = useState<LoginProvider | null>(null);
+  const [providersLoaded, setProvidersLoaded] = useState(false);
 
   useEffect(() => {
     if (session?.user) {
@@ -20,7 +24,29 @@ export default function LoginPage() {
     }
   }, [session, router]);
 
-  if (status === "loading") {
+  useEffect(() => {
+    let cancelled = false;
+    getProviders()
+      .then((providers) => {
+        if (cancelled) return;
+        if (providers?.okta) {
+          setLoginProvider("okta");
+        } else if (providers?.dev) {
+          setLoginProvider("dev");
+        } else {
+          setLoginProvider(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setProvidersLoaded(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (status === "loading" || !providersLoaded) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <p className="text-muted-foreground">Loading...</p>
@@ -39,10 +65,18 @@ export default function LoginPage() {
           <Button
             className="w-full"
             size="lg"
-            onClick={() => signIn("okta", { callbackUrl: "/dashboard" })}
+            disabled={!loginProvider}
+            onClick={() =>
+              loginProvider && signIn(loginProvider, { callbackUrl: "/dashboard" })
+            }
           >
-            Sign in with SSO
+            {loginProvider === "dev" ? "Sign in locally" : "Sign in with SSO"}
           </Button>
+          {!loginProvider && (
+            <p className="mt-3 text-center text-sm text-muted-foreground">
+              Authentication provider is not configured.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

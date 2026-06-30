@@ -122,6 +122,8 @@ Proxy Keys are virtual `akp_...` keys routed through AIKeyHive. They are the rec
 
 Direct Keys remain available for tools that require provider-native credentials. Direct-key traffic goes to the provider outside the AIKeyHive proxy, so it cannot be cost-guarded by Proxy Mode.
 
+New Direct Keys require an expiration period from 1 to 366 days unless `No expiration` is explicitly selected. Keys with an expiration are revoked provider-side by the Direct Key expiration cron after they expire. Existing keys migrated without `expires_at` remain no-expiration keys and are not revoked by that cron.
+
 Currently implemented proxy provider/endpoints:
 
 | Provider | Endpoint |
@@ -207,7 +209,9 @@ Vercel/serverless deployment note: streaming is supported by the Next route hand
 
 | Path | Schedule | Description |
 |---|---|---|
-| `/api/cron/sync-costs` | Daily 02:00 UTC | Sync costs from all providers, enforce budgets |
+| `/api/cron/sync-costs` | Hourly | Sync costs from all providers, enforce budgets |
+| `/api/cron/expire-direct-keys` | Hourly | Revoke expired Direct Keys provider-side and mark them expired |
+| `/api/cron/sync-anthropic-pool` | Daily 03:00 UTC | Sync active Anthropic organization keys into the pool |
 
 ## Architecture
 
@@ -226,8 +230,9 @@ Dashboard
   └── Cost overview
     │
     ▼
-Daily cron
+Scheduled cron
   ├── Fetch costs from provider APIs → store in DB
+  ├── Revoke expired Direct Keys provider-side
   └── Check budgets → auto-delete keys on overspend
 ```
 

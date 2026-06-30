@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import type { NextAuthConfig } from "next-auth";
 import Okta from "next-auth/providers/okta";
+import Credentials from "next-auth/providers/credentials";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -16,7 +17,7 @@ declare module "next-auth" {
   }
 }
 
-declare module "next-auth" {
+declare module "next-auth/jwt" {
   interface JWT {
     id?: string;
     role?: "user" | "admin";
@@ -26,34 +27,67 @@ declare module "next-auth" {
 const oidcIssuer = process.env.AUTH_OIDC_ISSUER?.trim();
 const oidcClientId = process.env.AUTH_OIDC_CLIENT_ID?.trim();
 const oidcClientSecret = process.env.AUTH_OIDC_CLIENT_SECRET?.trim();
+const oidcProviderConfigured = Boolean(
+  oidcIssuer && oidcClientId && oidcClientSecret
+);
+const devLoginEnabled =
+  process.env.NODE_ENV === "development" &&
+  process.env.AUTH_DEV_LOGIN === "true";
+const secureCookies =
+  process.env.NODE_ENV === "production" ||
+  process.env.AUTH_URL?.startsWith("https://");
+
+const authProviders: NextAuthConfig["providers"] = [];
+
+if (oidcProviderConfigured) {
+  authProviders.push(
+    Okta({
+      clientId: oidcClientId!,
+      clientSecret: oidcClientSecret!,
+      issuer: oidcIssuer!,
+    })
+  );
+}
+
+if (devLoginEnabled) {
+  authProviders.push(
+    Credentials({
+      id: "dev",
+      name: "Local Development",
+      credentials: {},
+      async authorize() {
+        const email =
+          process.env.AUTH_DEV_EMAIL?.trim() || "dev@aikeyhive.local";
+        return {
+          id: `dev:${email}`,
+          email,
+          name: process.env.AUTH_DEV_NAME?.trim() || "Local Dev User",
+        };
+      },
+    })
+  );
+}
 
 export const authConfig: NextAuthConfig = {
-  providers:
-    oidcIssuer && oidcClientId && oidcClientSecret
-      ? [
-          Okta({
-            clientId: oidcClientId,
-            clientSecret: oidcClientSecret,
-            issuer: oidcIssuer,
-          }),
-        ]
-      : [],
+  providers: authProviders,
   callbacks: {
-    async signIn({ profile }) {
+    async signIn({ profile, user }) {
       const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN?.trim();
       if (allowedDomain) {
-        if (!profile?.email) return false;
-        const emailDomain = profile.email.split("@").pop();
+        const email = profile?.email || user?.email;
+        if (!email) return false;
+        const emailDomain = email.split("@").pop();
         return emailDomain === allowedDomain;
       }
       return true;
     },
-    async jwt({ token, profile, trigger }) {
-      if ((trigger === "signIn" || trigger === "signUp") && profile) {
+    async jwt({ token, profile, user, trigger }) {
+      if ((trigger === "signIn" || trigger === "signUp") && (profile || user)) {
         try {
-          const email = profile.email!;
-          const sub = profile.sub!;
-          const name = (profile.name as string) || null;
+          const email = profile?.email || user?.email;
+          const sub = profile?.sub || user?.id;
+          const name = ((profile?.name || user?.name) as string) || null;
+          if (!email || !sub) return token;
 
           // Upsert user
           const existing = await db
@@ -122,7 +156,7 @@ export const authConfig: NextAuthConfig = {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: true,
+        secure: secureCookies,
       },
     },
     callbackUrl: {
@@ -130,7 +164,7 @@ export const authConfig: NextAuthConfig = {
       options: {
         sameSite: "lax",
         path: "/",
-        secure: true,
+        secure: secureCookies,
       },
     },
     csrfToken: {
@@ -139,7 +173,7 @@ export const authConfig: NextAuthConfig = {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: true,
+        secure: secureCookies,
       },
     },
     state: {
@@ -148,7 +182,7 @@ export const authConfig: NextAuthConfig = {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: true,
+        secure: secureCookies,
         maxAge: 900,
       },
     },
@@ -158,7 +192,7 @@ export const authConfig: NextAuthConfig = {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: true,
+        secure: secureCookies,
         maxAge: 900,
       },
     },

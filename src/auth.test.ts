@@ -15,6 +15,10 @@ vi.mock("next-auth/providers/okta", () => ({
   default: vi.fn((config) => ({ id: "okta", config })),
 }));
 
+vi.mock("next-auth/providers/credentials", () => ({
+  default: vi.fn((config) => ({ id: "dev", config })),
+}));
+
 describe("auth configuration", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -29,5 +33,18 @@ describe("auth configuration", () => {
     const { authConfig } = await import("@/auth");
 
     expect(authConfig.providers).toEqual([]);
+  });
+
+  it("registers a development credentials provider only when explicitly enabled", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("AUTH_OIDC_ISSUER", "");
+    vi.stubEnv("AUTH_OIDC_CLIENT_ID", "");
+    vi.stubEnv("AUTH_OIDC_CLIENT_SECRET", "");
+    vi.stubEnv("AUTH_DEV_LOGIN", "true");
+
+    const { authConfig } = await import("@/auth");
+
+    expect(authConfig.providers).toHaveLength(1);
+    expect(authConfig.providers?.[0]).toMatchObject({ id: "dev" });
   });
 });

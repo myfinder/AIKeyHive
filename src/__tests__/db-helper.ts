@@ -25,7 +25,11 @@ export function createTestDb() {
       name TEXT NOT NULL DEFAULT '',
       provider_key_id TEXT,
       key_hint TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      expires_at TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      revoked_at TEXT,
+      revocation_error TEXT
     );
 
     CREATE TABLE anthropic_key_pool (

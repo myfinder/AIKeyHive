@@ -122,6 +122,8 @@ Proxy Key は、AIKeyHive 経由でルーティングされる仮想的な `akp_
 
 Direct Key は、プロバイダー純正の認証情報を要求するツール向けに引き続き利用できます。Direct Key のトラフィックは AIKeyHive プロキシを経由しないため、Proxy Mode ではコストガードできません。
 
+新規 Direct Key は、`No expiration` を明示的に選択しない限り 1〜366 日の有効期限が必須です。有効期限付きのキーは、期限到来後に Direct Key 失効 cron がプロバイダー側で失効し、AIKeyHive 上では expired として記録します。`expires_at` なしで移行された既存キーは無期限扱いとなり、この cron では失効されません。
+
 現在実装されているプロキシプロバイダー / エンドポイントは以下です：
 
 | プロバイダー | エンドポイント |
@@ -207,7 +209,9 @@ Vercel / serverless でのデプロイ時は、Next route handler によるス�
 
 | パス | スケジュール | 説明 |
 |---|---|---|
-| `/api/cron/sync-costs` | 毎日 2:00 UTC | 全プロバイダーのコストを同期し、予算超過チェック |
+| `/api/cron/sync-costs` | 毎時 | 全プロバイダーのコストを同期し、予算超過チェック |
+| `/api/cron/expire-direct-keys` | 毎時 | 期限切れ Direct Key をプロバイダー側で失効し、expired として記録 |
+| `/api/cron/sync-anthropic-pool` | 毎日 3:00 UTC | Anthropic organization の有効キーをプールへ同期 |
 
 ## アーキテクチャ
 
@@ -226,8 +230,9 @@ JWT セッション確立 (ロール情報含む)
   └── コスト確認
     │
     ▼
-日次 Cron
+定期 Cron
   ├── プロバイダー API からコスト取得 → DB に保存
+  ├── 期限切れ Direct Key をプロバイダー側で失効
   └── 予算チェック → 超過時はキーを自動削除
 ```
 

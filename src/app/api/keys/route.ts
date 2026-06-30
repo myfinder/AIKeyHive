@@ -2,16 +2,34 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { apiKeys, anthropicKeyPool, users } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { z } from "zod";
 import * as openai from "@/lib/providers/openai";
 import * as anthropic from "@/lib/providers/anthropic";
 import * as gemini from "@/lib/providers/gemini";
 import { decrypt } from "@/lib/crypto";
 
+const DIRECT_KEY_MIN_EXPIRATION_DAYS = 1;
+const DIRECT_KEY_MAX_EXPIRATION_DAYS = 366;
+
 const createKeySchema = z.object({
   provider: z.enum(["openai", "anthropic", "gemini"]),
   name: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/, "Name may only contain letters, numbers, hyphens, and underscores"),
+  expiresInDays: z
+    .number()
+    .int()
+    .min(DIRECT_KEY_MIN_EXPIRATION_DAYS)
+    .max(DIRECT_KEY_MAX_EXPIRATION_DAYS)
+    .optional(),
+  noExpiration: z.boolean().optional().default(false),
+}).superRefine((data, ctx) => {
+  if (!data.noExpiration && data.expiresInDays === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Expiration is required unless noExpiration is true",
+      path: ["expiresInDays"],
+    });
+  }
 });
 
 export async function GET() {
@@ -26,7 +44,11 @@ export async function GET() {
       provider: apiKeys.provider,
       name: apiKeys.name,
       keyHint: apiKeys.keyHint,
+      expiresAt: apiKeys.expiresAt,
+      status: apiKeys.status,
       createdAt: apiKeys.createdAt,
+      revokedAt: apiKeys.revokedAt,
+      revocationError: apiKeys.revocationError,
       providerKeyId: apiKeys.providerKeyId,
     })
     .from(apiKeys)
@@ -133,9 +155,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { provider, name } = parsed.data;
+  const { provider, name, expiresInDays, noExpiration } = parsed.data;
+  const expiresAt = noExpiration
+    ? null
+    : directKeyExpiresAt(expiresInDays as number);
 
-  // Check for duplicate: same user + provider + name
+  // Check for duplicate: same user + provider + name among keys that still
+  // require lifecycle management.
   const existing = await db
     .select()
     .from(apiKeys)
@@ -143,7 +169,11 @@ export async function POST(req: NextRequest) {
       and(
         eq(apiKeys.userId, session.user.id),
         eq(apiKeys.provider, provider),
-        eq(apiKeys.name, name)
+        eq(apiKeys.name, name),
+        or(
+          eq(apiKeys.status, "active"),
+          eq(apiKeys.status, "revocation_failed")
+        )
       )
     )
     .all();
@@ -238,6 +268,8 @@ export async function POST(req: NextRequest) {
         name,
         providerKeyId,
         keyHint,
+        expiresAt,
+        status: "active",
       })
       .returning()
       .get();
@@ -248,6 +280,8 @@ export async function POST(req: NextRequest) {
         provider: newKey.provider,
         name: newKey.name,
         keyHint: newKey.keyHint,
+        expiresAt: newKey.expiresAt,
+        status: newKey.status,
         createdAt: newKey.createdAt,
       },
       ...(fullKey ? { key: fullKey } : {}),
@@ -265,4 +299,8 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function directKeyExpiresAt(days: number) {
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 }

@@ -36,9 +36,17 @@ export const apiKeys = sqliteTable("api_keys", {
   name: text("name").notNull().default(""),
   providerKeyId: text("provider_key_id"),
   keyHint: text("key_hint"),
+  expiresAt: text("expires_at"),
+  status: text("status", {
+    enum: ["active", "expired", "revocation_failed"],
+  })
+    .notNull()
+    .default("active"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),
+  revokedAt: text("revoked_at"),
+  revocationError: text("revocation_error"),
 });
 
 export const anthropicKeyPool = sqliteTable("anthropic_key_pool", {

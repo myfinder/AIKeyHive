@@ -36,7 +36,15 @@ async function throwingJsonFetcher<T>(url: string): Promise<T> {
 
 export type DashboardKey = Pick<
   ApiKey,
-  "id" | "provider" | "name" | "keyHint" | "createdAt"
+  | "id"
+  | "provider"
+  | "name"
+  | "keyHint"
+  | "expiresAt"
+  | "status"
+  | "createdAt"
+  | "revokedAt"
+  | "revocationError"
 > & { lastUsedAt: string | null };
 
 export type DashboardProxyKey = {

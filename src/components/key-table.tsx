@@ -19,6 +19,8 @@ const providerColors: Record<string, string> = {
   gemini: "bg-blue-100 text-blue-800",
 };
 
+const EXPIRING_SOON_MS = 7 * 24 * 60 * 60 * 1000;
+
 export function KeyTable() {
   const { keys, isLoading, mutate } = useKeys();
 
@@ -58,43 +60,101 @@ export function KeyTable() {
           <TableHead>Provider</TableHead>
           <TableHead>Name</TableHead>
           <TableHead>Key Hint</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Expires</TableHead>
           <TableHead>Created</TableHead>
           <TableHead>Last Used</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {keys.map((key) => (
-          <TableRow key={key.id}>
-            <TableCell>
-              <Badge variant="secondary" className={providerColors[key.provider]}>
-                {key.provider}
-              </Badge>
-            </TableCell>
-            <TableCell className="text-sm">{key.name || "—"}</TableCell>
-            <TableCell className="font-mono text-sm text-muted-foreground">
-              {key.keyHint || "—"}
-            </TableCell>
-            <TableCell className="text-sm text-muted-foreground">
-              {new Date(key.createdAt).toLocaleDateString()}
-            </TableCell>
-            <TableCell className="text-sm text-muted-foreground">
-              {key.lastUsedAt
-                ? new Date(key.lastUsedAt).toLocaleDateString()
-                : "—"}
-            </TableCell>
-            <TableCell className="text-right">
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => handleDelete(key.id)}
-              >
-                Delete
-              </Button>
-            </TableCell>
-          </TableRow>
-        ))}
+        {keys.map((key) => {
+          const status = displayStatus(key);
+
+          return (
+            <TableRow key={key.id}>
+              <TableCell>
+                <Badge variant="secondary" className={providerColors[key.provider]}>
+                  {key.provider}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-sm">{key.name || "—"}</TableCell>
+              <TableCell className="font-mono text-sm text-muted-foreground">
+                {key.keyHint || "—"}
+              </TableCell>
+              <TableCell>
+                <Badge
+                  variant="secondary"
+                  className={status.className}
+                  title={key.revocationError || undefined}
+                >
+                  {status.label}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-sm text-muted-foreground">
+                {formatExpires(key.expiresAt)}
+              </TableCell>
+              <TableCell className="text-sm text-muted-foreground">
+                {formatDate(key.createdAt)}
+              </TableCell>
+              <TableCell className="text-sm text-muted-foreground">
+                {formatDate(key.lastUsedAt)}
+              </TableCell>
+              <TableCell className="text-right">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleDelete(key.id)}
+                >
+                  Delete
+                </Button>
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );
+}
+
+function displayStatus(key: {
+  status: "active" | "expired" | "revocation_failed";
+  expiresAt: string | null;
+}) {
+  if (key.status === "revocation_failed") {
+    return {
+      label: "Revocation failed",
+      className: "bg-red-100 text-red-800",
+    };
+  }
+
+  const expiresAt = key.expiresAt ? Date.parse(key.expiresAt) : null;
+  if (key.status === "expired" || (expiresAt !== null && expiresAt <= Date.now())) {
+    return {
+      label: "Expired",
+      className: "bg-slate-100 text-slate-700",
+    };
+  }
+
+  if (expiresAt !== null && expiresAt - Date.now() <= EXPIRING_SOON_MS) {
+    return {
+      label: "Expires soon",
+      className: "bg-amber-100 text-amber-800",
+    };
+  }
+
+  return {
+    label: "Active",
+    className: "bg-emerald-100 text-emerald-800",
+  };
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString();
+}
+
+function formatExpires(value: string | null) {
+  if (!value) return "No expiration";
+  return new Date(value).toLocaleDateString();
 }

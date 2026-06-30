@@ -6,6 +6,10 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/cron/expire-direct-keys",
+      "schedule": "0 * * * *"
+    },
+    {
       "path": "/api/cron/sync-anthropic-pool",
       "schedule": "0 3 * * *"
     }
