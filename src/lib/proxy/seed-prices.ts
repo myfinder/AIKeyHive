@@ -9,6 +9,9 @@ type PriceSeedDatabase = Pick<typeof db, "insert">;
 // - https://developers.openai.com/api/docs/models/all
 // The current schema intentionally does not encode long-context tiers,
 // Batch/Flex/Priority pricing, or non-text modalities.
+// Approval-gated models (gpt-5.5-cyber, gpt-5.6-cyber) are intentionally
+// excluded: they need separate provisioning from OpenAI, so seeding a price
+// would offer a model the proxy cannot actually call.
 export const defaultModelPrices = [
   {
     provider: "openai",
@@ -152,6 +155,30 @@ export const defaultModelPrices = [
     inputUsdPer1m: 30,
     cachedInputUsdPer1m: null,
     outputUsdPer1m: 180,
+    active: 1,
+  },
+  {
+    provider: "openai",
+    model: "gpt-5.6-luna",
+    inputUsdPer1m: 0.2,
+    cachedInputUsdPer1m: 0.02,
+    outputUsdPer1m: 1.2,
+    active: 1,
+  },
+  {
+    provider: "openai",
+    model: "gpt-5.6-sol",
+    inputUsdPer1m: 4,
+    cachedInputUsdPer1m: 0.4,
+    outputUsdPer1m: 20,
+    active: 1,
+  },
+  {
+    provider: "openai",
+    model: "gpt-5.6-terra",
+    inputUsdPer1m: 2,
+    cachedInputUsdPer1m: 0.2,
+    outputUsdPer1m: 12,
     active: 1,
   },
   {

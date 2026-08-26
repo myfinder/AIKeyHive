@@ -28,6 +28,9 @@ const expectedOpenAiStandardTextModels = [
   "gpt-5.4-pro",
   "gpt-5.5",
   "gpt-5.5-pro",
+  "gpt-5.6-luna",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
   "o3",
   "o3-pro",
 ];
@@ -46,7 +49,7 @@ describe("seedDefaultModelPrices", () => {
       .orderBy(modelPrices.model)
       .all();
 
-    expect(rows).toHaveLength(20);
+    expect(rows).toHaveLength(23);
     expect(rows.map((row) => row.model)).toEqual(
       expectedOpenAiStandardTextModels
     );
@@ -109,7 +112,7 @@ describe("seedDefaultModelPrices", () => {
 
     const rows = testDbInstance.db.select().from(modelPrices).all();
 
-    expect(rows).toHaveLength(20);
+    expect(rows).toHaveLength(23);
     expect(rows.filter((row) => row.active === 1)).toHaveLength(
       expectedOpenAiStandardTextModels.length
     );
