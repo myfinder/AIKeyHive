@@ -1,5 +1,5 @@
 export const defaultAllowedModelsCsv =
-  "gpt-5.6-sol,gpt-5.6-terra,gpt-5.6-luna";
+  "gpt-5.5,gpt-5.4-mini,gpt-5.4-nano";
 
 export const proxyKeyFormFieldHelp = {
   name: "Name is required. Use 1-100 characters: letters, numbers, hyphens, or underscores. Example: team-prod.",
